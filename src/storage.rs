@@ -1,0 +1,500 @@
+use crate::prelude::*;
+use crate::*;
+
+pub(crate) fn final_brief_lines_for_chat(path: &str, lang: Language) -> io::Result<Vec<String>> {
+    let content = fs::read_to_string(path)?;
+    let mut lines = Vec::new();
+    let mut in_current_spec = false;
+    let mut in_last_review = false;
+    let mut emitted_any = false;
+
+    for raw in content.lines() {
+        let line = raw.trim_end();
+        if line == "## Current Spec" {
+            in_current_spec = true;
+            in_last_review = false;
+            lines.push(
+                lang.choose("## Текущая спека", "## Current Spec")
+                    .to_string(),
+            );
+            emitted_any = true;
+            continue;
+        }
+        if line == "## Last Review" {
+            in_current_spec = false;
+            in_last_review = true;
+            lines.push(
+                lang.choose("## Последнее ревью", "## Last Review")
+                    .to_string(),
+            );
+            emitted_any = true;
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_current_spec = false;
+            in_last_review = false;
+        }
+
+        if in_current_spec || in_last_review {
+            lines.push(line.to_string());
+        }
+    }
+
+    if !emitted_any
+        || lines
+            .iter()
+            .all(|line| line.trim().is_empty() || line.starts_with("## "))
+    {
+        lines = content.lines().map(ToString::to_string).collect();
+    }
+
+    let mut compact = Vec::new();
+    let mut previous_blank = false;
+    for line in lines {
+        let blank = line.trim().is_empty();
+        if blank && previous_blank {
+            continue;
+        }
+        previous_blank = blank;
+        compact.push(truncate_chars(&line, 220));
+        if compact.len() >= 140 {
+            compact.push(
+                lang.choose(
+                    "… ответ обрезан, полный brief сохранён в файле выше",
+                    "… answer truncated, full brief is saved in the file above",
+                )
+                .to_string(),
+            );
+            break;
+        }
+    }
+
+    Ok(compact)
+}
+
+pub(crate) fn is_welcome_line(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("✦ Добро пожаловать")
+        || line.starts_with("✦ Welcome")
+        || line.starts_with("Введите задачу")
+        || line.starts_with("Type a task")
+        || line.starts_with("Это Claude Code-style")
+        || line.starts_with("This is a Claude Code-style")
+}
+
+pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+
+    if max_chars == 0 {
+        return String::new();
+    }
+
+    let mut truncated = text
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+pub(crate) fn duel_state_dir() -> PathBuf {
+    if let Ok(path) = env::var("DUEL_HOME") {
+        return PathBuf::from(path);
+    }
+
+    if let Ok(home) = env::var("HOME") {
+        return PathBuf::from(home).join(".duel");
+    }
+
+    PathBuf::from(".duel")
+}
+
+pub(crate) fn history_path() -> PathBuf {
+    duel_state_dir().join("history")
+}
+
+pub(crate) fn chats_dir() -> PathBuf {
+    duel_state_dir().join("chats")
+}
+
+pub(crate) fn config_path() -> PathBuf {
+    if let Ok(path) = env::var("DUEL_CONFIG") {
+        return PathBuf::from(path);
+    }
+
+    duel_state_dir().join("config")
+}
+
+pub(crate) fn load_config(path: &Path) -> AppConfig {
+    let Ok(content) = fs::read_to_string(path) else {
+        return AppConfig::default();
+    };
+
+    let mut config = AppConfig::default();
+    let mut legacy_effort = None;
+    let mut codex_effort_seen = false;
+    let mut claude_effort_seen = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().trim_matches('"');
+
+        match key {
+            "onboarding_done" => config.onboarding_done = value == "true",
+            "mode" => {
+                if let Some(mode) = Mode::from_str(value) {
+                    config.mode = mode;
+                }
+            }
+            "lang" => {
+                if let Some(lang) = Language::from_str(value) {
+                    config.lang = lang;
+                }
+            }
+            "rounds" => {
+                if let Ok(rounds) = value.parse::<usize>() {
+                    config.rounds = rounds.max(1);
+                }
+            }
+            "out_dir" => config.out_dir = value.to_string(),
+            "effort" => {
+                if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
+                    config.effort_index = index;
+                    legacy_effort = Some(index);
+                }
+            }
+            "codex_effort" => {
+                if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
+                    config.codex_effort_index = index;
+                    codex_effort_seen = true;
+                }
+            }
+            "claude_effort" => {
+                if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
+                    config.claude_effort_index = index;
+                    claude_effort_seen = true;
+                }
+            }
+            "linked_effort" => {
+                config.linked_effort_split = match value {
+                    "split" | "per-model" | "true" => true,
+                    "shared" | "common" | "false" => false,
+                    _ => config.linked_effort_split,
+                };
+            }
+            "split_effort" => {
+                config.linked_effort_split = value == "true";
+            }
+            "effort_split" => {
+                config.linked_effort_split = value == "true";
+            }
+            "linked_effort_split" => {
+                config.linked_effort_split = value == "true";
+            }
+            "per_model_effort" => {
+                config.linked_effort_split = value == "true";
+            }
+            "model_effort_mode" => {
+                config.linked_effort_split = matches!(value, "split" | "per-model");
+            }
+            "effort_mode" => {
+                config.linked_effort_split = matches!(value, "split" | "per-model");
+            }
+            "effort_per_model" => {
+                config.linked_effort_split = value == "true";
+            }
+            "effort_shared" => {
+                config.linked_effort_split = value != "true";
+            }
+            "effort_common" => {
+                config.linked_effort_split = value != "true";
+            }
+            "common_effort" => {
+                if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
+                    config.effort_index = index;
+                    legacy_effort = Some(index);
+                }
+            }
+            "last_chat" => {
+                let chat_id = sanitize_chat_id(value);
+                if !chat_id.is_empty() {
+                    config.last_chat_id = Some(chat_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(index) = legacy_effort {
+        let effort = effort_label(index);
+        if !codex_effort_seen && provider_supports_effort("codex", effort) {
+            config.codex_effort_index = index;
+        }
+        if !claude_effort_seen && provider_supports_effort("claude", effort) {
+            config.claude_effort_index = index;
+        }
+    }
+
+    config
+}
+
+pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let content = format!(
+        concat!(
+            "onboarding_done={}\n",
+            "mode=\"{}\"\n",
+            "lang=\"{}\"\n",
+            "rounds={}\n",
+            "out_dir=\"{}\"\n",
+            "effort=\"{}\"\n",
+            "codex_effort=\"{}\"\n",
+            "claude_effort=\"{}\"\n",
+            "linked_effort=\"{}\"\n",
+            "last_chat=\"{}\"\n",
+        ),
+        config.onboarding_done,
+        config.mode.as_str(),
+        config.lang.as_str(),
+        config.rounds,
+        config.out_dir,
+        effort_label(config.effort_index),
+        effort_label(config.codex_effort_index),
+        effort_label(config.claude_effort_index),
+        if config.linked_effort_split {
+            "split"
+        } else {
+            "shared"
+        },
+        config.last_chat_id.as_deref().unwrap_or(""),
+    );
+    fs::write(path, content)
+}
+
+pub(crate) fn load_history(path: &Path) -> io::Result<Vec<String>> {
+    let content = fs::read_to_string(path)?;
+    let mut history = content
+        .lines()
+        .map(decode_field)
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+
+    if history.len() > MAX_HISTORY_LINES {
+        let remove_count = history.len() - MAX_HISTORY_LINES;
+        history.drain(0..remove_count);
+    }
+
+    Ok(history)
+}
+
+pub(crate) fn save_history(path: &Path, history: &[String]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = fs::File::create(path)?;
+    for line in history
+        .iter()
+        .rev()
+        .take(MAX_HISTORY_LINES)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        writeln!(file, "{}", encode_field(line))?;
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+pub(crate) struct ChatSummary {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) lines: usize,
+    pub(crate) modified: SystemTime,
+}
+
+pub(crate) fn restore_or_create_chat(
+    chats_dir: &Path,
+    _last_chat_id: Option<&str>,
+    lang: Language,
+) -> (String, PathBuf, Vec<String>) {
+    let chat_id = new_chat_id();
+    let path = chat_path_for_id(chats_dir, &chat_id);
+    let transcript = initial_transcript(lang);
+    (chat_id, path, transcript)
+}
+
+pub(crate) fn new_chat_id() -> String {
+    format!("chat-{}", unix_millis())
+}
+
+pub(crate) fn chat_path_for_id(chats_dir: &Path, chat_id: &str) -> PathBuf {
+    chats_dir.join(format!(
+        "{}.{}",
+        sanitize_chat_id(chat_id),
+        CHAT_FILE_EXTENSION
+    ))
+}
+
+pub(crate) fn sanitize_chat_id(value: &str) -> String {
+    value
+        .trim()
+        .trim_end_matches(&format!(".{}", CHAT_FILE_EXTENSION))
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect()
+}
+
+pub(crate) fn save_chat_transcript(
+    path: &Path,
+    chat_id: &str,
+    transcript: &[String],
+) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = fs::File::create(path)?;
+    writeln!(file, "# Duel Chat")?;
+    writeln!(file, "id={}", chat_id)?;
+    writeln!(file, "created={}", unix_millis())?;
+    writeln!(file, "---")?;
+    for line in transcript {
+        writeln!(file, "v1\t{}", encode_field(line))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn append_chat_line(path: &Path, line: &str) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    if !path.exists() {
+        let chat_id = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "unknown".to_string());
+        save_chat_transcript(path, &chat_id, &[])?;
+    }
+
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "v1\t{}", encode_field(line))
+}
+
+pub(crate) fn load_chat_transcript(path: &Path) -> io::Result<Vec<String>> {
+    let content = fs::read_to_string(path)?;
+    Ok(content
+        .lines()
+        .filter_map(|line| line.strip_prefix("v1\t"))
+        .map(decode_field)
+        .filter(|line| !is_welcome_line(line))
+        .collect())
+}
+
+pub(crate) fn list_saved_chats(chats_dir: &Path, limit: usize) -> Vec<ChatSummary> {
+    let Ok(entries) = fs::read_dir(chats_dir) else {
+        return Vec::new();
+    };
+
+    let mut chats = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(CHAT_FILE_EXTENSION))
+        .filter_map(|path| chat_summary(&path))
+        .collect::<Vec<_>>();
+
+    chats.sort_by(|left, right| right.modified.cmp(&left.modified));
+    chats.truncate(limit);
+    chats
+}
+
+pub(crate) fn chat_summary(path: &Path) -> Option<ChatSummary> {
+    let id = path.file_stem()?.to_string_lossy().to_string();
+    let modified = fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(UNIX_EPOCH);
+    let lines = load_chat_transcript(path).ok()?;
+    let title = lines
+        .iter()
+        .find_map(|line| line.strip_prefix("◆ ").map(str::trim))
+        .or_else(|| {
+            lines
+                .iter()
+                .find(|line| !line.trim().is_empty())
+                .map(String::as_str)
+        })
+        .map(|line| truncate_chars(line, 72))
+        .unwrap_or_else(|| "empty chat".to_string());
+
+    Some(ChatSummary {
+        id,
+        title,
+        lines: lines.len(),
+        modified,
+    })
+}
+
+pub(crate) fn find_last_run(transcript: &[String]) -> Option<String> {
+    transcript
+        .iter()
+        .rev()
+        .find_map(|line| line.strip_prefix("Final brief: ").map(ToString::to_string))
+}
+
+pub(crate) fn encode_field(value: &str) -> String {
+    let mut encoded = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => encoded.push_str("\\\\"),
+            '\n' => encoded.push_str("\\n"),
+            '\r' => encoded.push_str("\\r"),
+            '\t' => encoded.push_str("\\t"),
+            _ => encoded.push(ch),
+        }
+    }
+    encoded
+}
+
+pub(crate) fn decode_field(value: &str) -> String {
+    let mut decoded = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            decoded.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('n') => decoded.push('\n'),
+            Some('r') => decoded.push('\r'),
+            Some('t') => decoded.push('\t'),
+            Some('\\') => decoded.push('\\'),
+            Some(other) => decoded.push(other),
+            None => decoded.push('\\'),
+        }
+    }
+    decoded
+}
+
+pub(crate) fn unix_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}

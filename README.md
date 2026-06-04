@@ -23,6 +23,18 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 - `crossterm` for raw input, alternate screen, key events, and terminal control.
 - `spec-duel` remains the orchestration engine used by the TUI.
 
+## Project Layout
+
+- `src/main.rs` wires modules and delegates startup.
+- `src/model.rs` stores shared enums, command specs, effort constants, and labels.
+- `src/app.rs` owns application state and high-level chat/planning actions.
+- `src/runtime.rs` handles terminal startup, event loop, and keyboard input.
+- `src/ui.rs` renders the TUI screens, composer, footer, loader, and effort picker.
+- `src/storage.rs` handles config, history, and saved chat files.
+- `src/auth.rs` checks and launches local CLI authentication.
+- `src/worker.rs` runs provider CLIs and the `spec-duel` engine.
+- `src/input.rs` contains cursor and word-boundary helpers.
+
 Current TUI shape:
 
 - Claude Code-style welcome panel;
