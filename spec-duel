@@ -1,0 +1,504 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROUNDS=2
+OUT_DIR=".ai-runs"
+CWD="$(pwd)"
+DRY_RUN=0
+TASK_PARTS=()
+EFFORT="${AI_ORCHESTRATOR_EFFORT:-high}"
+ARCHITECT_EFFORT=""
+REVIEWER_EFFORT=""
+
+ARCHITECT="${AI_ORCHESTRATOR_ARCHITECT:-claude}"
+REVIEWER="${AI_ORCHESTRATOR_REVIEWER:-codex}"
+CLAUDE_CMD="${AI_ORCHESTRATOR_CLAUDE:-claude}"
+CODEX_CMD="${AI_ORCHESTRATOR_CODEX:-codex}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  spec-duel [options] <task...>
+
+Options:
+  --rounds <n>  Review loop limit, default 2
+  --out <dir>   Artifact directory, default .ai-runs
+  --cwd <dir>   Working directory for agent CLIs, default current dir
+  --architect <claude|codex>
+                Agent used for drafting and revision, default claude
+  --reviewer <claude|codex>
+                Agent used for review, default codex
+  --codex-only  Use Codex for both architect and reviewer
+  --effort <level>
+                Shared provider effort. Codex: low|medium|high|xhigh.
+                Claude: low|medium|high|max. Shared mixed mode: low|medium|high.
+  --architect-effort <level>
+                Effort for the architect model. Overrides --effort for architect.
+  --reviewer-effort <level>
+                Effort for the reviewer model. Overrides --effort for reviewer.
+  --dry-run     Write planned commands without calling agent CLIs
+  -h, --help    Show this help
+
+Examples:
+  ./spec-duel "Build an affiliate program for a SaaS"
+  ./spec-duel --codex-only "Build an affiliate program for a SaaS"
+  pbpaste | ./spec-duel
+  ./spec-duel --rounds 3 --out .ai-runs "Plan a referral dashboard"
+EOF
+}
+
+abs_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "$(pwd)/$1" ;;
+  esac
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --rounds)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --rounds requires a number" >&2; exit 1; }
+      ROUNDS="$1"
+      ;;
+    --rounds=*)
+      ROUNDS="${1#--rounds=}"
+      ;;
+    --out)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --out requires a directory" >&2; exit 1; }
+      OUT_DIR="$1"
+      ;;
+    --out=*)
+      OUT_DIR="${1#--out=}"
+      ;;
+    --cwd)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --cwd requires a directory" >&2; exit 1; }
+      CWD="$1"
+      ;;
+    --cwd=*)
+      CWD="${1#--cwd=}"
+      ;;
+    --architect)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --architect requires claude or codex" >&2; exit 1; }
+      ARCHITECT="$1"
+      ;;
+    --architect=*)
+      ARCHITECT="${1#--architect=}"
+      ;;
+    --reviewer)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --reviewer requires claude or codex" >&2; exit 1; }
+      REVIEWER="$1"
+      ;;
+    --reviewer=*)
+      REVIEWER="${1#--reviewer=}"
+      ;;
+    --codex-only)
+      ARCHITECT="codex"
+      REVIEWER="codex"
+      ;;
+    --effort)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --effort requires a level" >&2; exit 1; }
+      EFFORT="$1"
+      ;;
+    --effort=*)
+      EFFORT="${1#--effort=}"
+      ;;
+    --architect-effort)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --architect-effort requires a level" >&2; exit 1; }
+      ARCHITECT_EFFORT="$1"
+      ;;
+    --architect-effort=*)
+      ARCHITECT_EFFORT="${1#--architect-effort=}"
+      ;;
+    --reviewer-effort)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --reviewer-effort requires a level" >&2; exit 1; }
+      REVIEWER_EFFORT="$1"
+      ;;
+    --reviewer-effort=*)
+      REVIEWER_EFFORT="${1#--reviewer-effort=}"
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        TASK_PARTS+=("$1")
+        shift
+      done
+      break
+      ;;
+    *)
+      TASK_PARTS+=("$1")
+      ;;
+  esac
+  shift
+done
+
+if ! [[ "$ROUNDS" =~ ^[0-9]+$ ]] || [[ "$ROUNDS" -lt 1 ]]; then
+  echo "error: --rounds must be a positive integer" >&2
+  exit 1
+fi
+
+case "$ARCHITECT" in
+  claude|codex) ;;
+  *) echo "error: --architect must be claude or codex" >&2; exit 1 ;;
+esac
+
+case "$REVIEWER" in
+  claude|codex) ;;
+  *) echo "error: --reviewer must be claude or codex" >&2; exit 1 ;;
+esac
+
+if [[ -z "$ARCHITECT_EFFORT" ]]; then
+  ARCHITECT_EFFORT="${AI_ORCHESTRATOR_ARCHITECT_EFFORT:-$EFFORT}"
+fi
+
+if [[ -z "$REVIEWER_EFFORT" ]]; then
+  REVIEWER_EFFORT="${AI_ORCHESTRATOR_REVIEWER_EFFORT:-$EFFORT}"
+fi
+
+provider_supports_effort() {
+  local provider="$1"
+  local effort="$2"
+  case "$provider:$effort" in
+    codex:low|codex:medium|codex:high|codex:xhigh) return 0 ;;
+    claude:low|claude:medium|claude:high|claude:max) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! provider_supports_effort "$ARCHITECT" "$ARCHITECT_EFFORT"; then
+  echo "error: architect effort '$ARCHITECT_EFFORT' is not supported by architect '$ARCHITECT'" >&2
+  echo "supported: codex=low|medium|high|xhigh claude=low|medium|high|max" >&2
+  exit 1
+fi
+
+if ! provider_supports_effort "$REVIEWER" "$REVIEWER_EFFORT"; then
+  echo "error: reviewer effort '$REVIEWER_EFFORT' is not supported by reviewer '$REVIEWER'" >&2
+  echo "supported: codex=low|medium|high|xhigh claude=low|medium|high|max" >&2
+  exit 1
+fi
+
+if [[ ${#TASK_PARTS[@]} -eq 0 ]]; then
+  TASK="$(cat | sed 's/[[:space:]]*$//')"
+else
+  TASK="${TASK_PARTS[*]}"
+fi
+
+if [[ -z "${TASK//[[:space:]]/}" ]]; then
+  usage
+  echo "error: task is required as arguments or stdin" >&2
+  exit 1
+fi
+
+CWD="$(abs_path "$CWD")"
+OUT_DIR="$(abs_path "$OUT_DIR")"
+
+[[ -d "$CWD" ]] || { echo "error: --cwd does not exist: $CWD" >&2; exit 1; }
+
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  if [[ "$ARCHITECT" == "claude" || "$REVIEWER" == "claude" ]]; then
+    command -v "$CLAUDE_CMD" >/dev/null 2>&1 || { echo "error: claude command not found: $CLAUDE_CMD" >&2; exit 1; }
+  fi
+  if [[ "$ARCHITECT" == "codex" || "$REVIEWER" == "codex" ]]; then
+    command -v "$CODEX_CMD" >/dev/null 2>&1 || { echo "error: codex command not found: $CODEX_CMD" >&2; exit 1; }
+  fi
+fi
+
+RUN_DIR="$OUT_DIR/spec-duel-$(date +%s)"
+if ! mkdir -p "$RUN_DIR"; then
+  echo "error: cannot create run directory: $RUN_DIR" >&2
+  exit 1
+fi
+printf '%s\n' "$TASK" > "$RUN_DIR/00-task.md"
+
+echo "AI Orchestrator run: $RUN_DIR"
+echo "Round limit: $ROUNDS"
+echo "Architect: $ARCHITECT"
+echo "Reviewer: $REVIEWER"
+if [[ "$ARCHITECT_EFFORT" == "$REVIEWER_EFFORT" ]]; then
+  echo "Effort: $ARCHITECT_EFFORT"
+else
+  echo "Architect effort: $ARCHITECT_EFFORT"
+  echo "Reviewer effort: $REVIEWER_EFFORT"
+fi
+
+write_initial_prompt() {
+  local path="$1"
+  cat > "$path" <<EOF
+You are the Delivery Architect in a two-agent planning loop.
+
+Your job: convert the raw task into a short implementation-ready delivery spec
+that a fullstack developer can start executing after human approval.
+
+Hard rules:
+- Do not write production code.
+- Keep the scope shippable in 3-5 days when possible.
+- Split scope into V0, V1, and Later.
+- Make uncertainty explicit.
+- Define acceptance criteria.
+- Define what can be demoed tomorrow.
+- Prefer local CLI/API adapters before deep platform integrations.
+
+Required markdown sections:
+1. Goal
+2. User Journey
+3. V0 Scope
+4. V1 Scope
+5. Explicit Non-Goals
+6. Core Entities
+7. Integrations
+8. Delivery Slices
+9. Acceptance Criteria
+10. Risks
+11. Questions for Human Decision
+12. Tomorrow Demo
+
+Raw task:
+$TASK
+EOF
+}
+
+write_codex_review_prompt() {
+  local path="$1"
+  local spec_path="$2"
+  local round="$3"
+  cat > "$path" <<EOF
+You are the skeptical senior fullstack reviewer in a two-agent planning loop.
+
+Your job: protect delivery speed and implementation quality. Review the spec
+as if the developer wants a shippable 3-5 day MVP.
+
+Return exactly these markdown sections:
+
+VERDICT: APPROVE or VERDICT: REVISE
+
+## Blockers
+List only issues that truly block implementation.
+
+## Scope Cuts
+What must be removed from V0/V1.
+
+## Missing Decisions
+Questions that require a human decision.
+
+## Acceptance Criteria Gaps
+What must be testable before approval.
+
+## Security And Account Risks
+Call out credential, sandbox, auth, ToS, and local file access risks.
+
+## Revision Instructions
+Concrete instructions for the next Claude revision.
+
+Review round: $round
+
+Original task:
+$TASK
+
+Spec to review:
+EOF
+  cat "$spec_path" >> "$path"
+}
+
+write_claude_revision_prompt() {
+  local path="$1"
+  local spec_path="$2"
+  local review_path="$3"
+  cat > "$path" <<EOF
+You are the Delivery Architect. Rewrite the implementation spec using the
+review below. Do not defend the previous spec. Resolve the review directly.
+
+If a decision cannot be made safely, put it under "Questions for Human Decision"
+instead of hiding it.
+
+Output only the revised markdown spec with the same section structure.
+
+Original task:
+$TASK
+
+Previous spec:
+EOF
+  cat "$spec_path" >> "$path"
+  cat >> "$path" <<'EOF'
+
+Codex review:
+EOF
+  cat "$review_path" >> "$path"
+}
+
+run_claude() {
+  local effort="$1"
+  shift
+  local prompt_path="$1"
+  local output_path="$2"
+  local err_path="$3"
+  local instruction="$4"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    {
+      echo "DRY RUN"
+      echo "program: $CLAUDE_CMD"
+      echo "args: -p --effort \"$effort\" --no-session-persistence --tools \"\" --max-turns 3 --output-format text \"$instruction\""
+      echo "cwd: $CWD"
+      echo "prompt: $prompt_path"
+    } > "$output_path"
+    : > "$err_path"
+    return
+  fi
+
+  if ! (
+    cd "$CWD"
+    "$CLAUDE_CMD" -p --effort "$effort" --no-session-persistence --tools "" --max-turns 3 --output-format text "$instruction" \
+      < "$prompt_path" > "$output_path" 2> "$err_path"
+  ); then
+    echo "error: Claude command failed. See $output_path and $err_path" >&2
+    return 2
+  fi
+
+  if [[ ! -s "$output_path" ]]; then
+    echo "error: Claude returned an empty response. See $err_path" >&2
+    return 2
+  fi
+}
+
+run_codex() {
+  local effort="$1"
+  shift
+  local prompt_path="$1"
+  local output_path="$2"
+  local err_path="$3"
+  local instruction="$4"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    {
+      echo "DRY RUN"
+      echo "program: $CODEX_CMD"
+      echo "args: exec -c model_reasoning_effort=\"${effort}\" --skip-git-repo-check --ephemeral --color never -s read-only \"$instruction\""
+      echo "cwd: $CWD"
+      echo "prompt: $prompt_path"
+    } > "$output_path"
+    : > "$err_path"
+    return
+  fi
+
+  if ! (
+    cd "$CWD"
+    "$CODEX_CMD" exec -c "model_reasoning_effort=\"${effort}\"" --skip-git-repo-check --ephemeral --color never -s read-only "$instruction" \
+      < "$prompt_path" > "$output_path" 2> "$err_path"
+  ); then
+    echo "error: Codex command failed. See $output_path and $err_path" >&2
+    return 2
+  fi
+
+  if [[ ! -s "$output_path" ]]; then
+    echo "error: Codex returned an empty response. See $err_path" >&2
+    return 2
+  fi
+}
+
+run_architect() {
+  if [[ "$ARCHITECT" == "claude" ]]; then
+    run_claude "$ARCHITECT_EFFORT" "$@"
+  else
+    run_codex "$ARCHITECT_EFFORT" "$@"
+  fi
+}
+
+run_reviewer() {
+  if [[ "$REVIEWER" == "claude" ]]; then
+    run_claude "$REVIEWER_EFFORT" "$@"
+  else
+    run_codex "$REVIEWER_EFFORT" "$@"
+  fi
+}
+
+is_approved() {
+  grep -Eiq '^[[:space:]]*\**[[:space:]]*VERDICT:[[:space:]]*APPROVE' "$1"
+}
+
+SPEC_PATH="$RUN_DIR/01-architect-draft.md"
+PROMPT_PATH="$RUN_DIR/prompt-01-architect-draft.md"
+write_initial_prompt "$PROMPT_PATH"
+
+echo "Drafting spec with $ARCHITECT..."
+run_architect "$PROMPT_PATH" "$SPEC_PATH" "$RUN_DIR/01-architect-draft.stderr.log" \
+  "Use stdin as the full instruction. Produce only the requested markdown plan."
+
+APPROVED=0
+LAST_REVIEW_PATH=""
+
+for ROUND in $(seq 1 "$ROUNDS"); do
+  REVIEW_PATH="$RUN_DIR/round-$(printf '%02d' "$ROUND")-review.md"
+  REVIEW_PROMPT_PATH="$RUN_DIR/prompt-round-$(printf '%02d' "$ROUND")-review.md"
+  LAST_REVIEW_PATH="$REVIEW_PATH"
+
+  write_codex_review_prompt "$REVIEW_PROMPT_PATH" "$SPEC_PATH" "$ROUND"
+
+  echo "Review round $ROUND with $REVIEWER..."
+  run_reviewer "$REVIEW_PROMPT_PATH" "$REVIEW_PATH" "$RUN_DIR/round-$(printf '%02d' "$ROUND")-review.stderr.log" \
+    "Use stdin as the full reviewer instruction and context."
+
+  if is_approved "$REVIEW_PATH"; then
+    APPROVED=1
+    break
+  fi
+
+  if [[ "$ROUND" -lt "$ROUNDS" ]]; then
+    REVISION_PATH="$RUN_DIR/round-$(printf '%02d' "$ROUND")-architect-revision.md"
+    REVISION_PROMPT_PATH="$RUN_DIR/prompt-round-$(printf '%02d' "$ROUND")-architect-revision.md"
+    write_claude_revision_prompt "$REVISION_PROMPT_PATH" "$SPEC_PATH" "$REVIEW_PATH"
+
+    echo "Revision round $ROUND with $ARCHITECT..."
+    run_architect "$REVISION_PROMPT_PATH" "$REVISION_PATH" "$RUN_DIR/round-$(printf '%02d' "$ROUND")-architect-revision.stderr.log" \
+      "Use stdin as the full revision instruction. Produce only the revised markdown spec."
+    SPEC_PATH="$REVISION_PATH"
+  fi
+done
+
+FINAL_PATH="$RUN_DIR/final-decision-brief.md"
+{
+  echo "# Final Decision Brief"
+  echo
+  if [[ "$APPROVED" -eq 1 ]]; then
+    echo "Status: Approved by reviewer"
+  else
+    echo "Status: Needs human decision"
+  fi
+  echo
+  echo "## Original Task"
+  echo
+  cat "$RUN_DIR/00-task.md"
+  echo
+  echo "## Current Spec"
+  echo
+  cat "$SPEC_PATH"
+  echo
+  echo "## Last Review"
+  echo
+  if [[ -n "$LAST_REVIEW_PATH" && -f "$LAST_REVIEW_PATH" ]]; then
+    cat "$LAST_REVIEW_PATH"
+  else
+    echo "No review was generated."
+  fi
+} > "$FINAL_PATH"
+
+echo
+echo "Final brief: $FINAL_PATH"
+if [[ "$APPROVED" -eq 1 ]]; then
+  echo "Status: approved by reviewer"
+else
+  echo "Status: needs human decision"
+fi
