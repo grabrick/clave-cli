@@ -26,10 +26,10 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 ## Project Layout
 
 - `src/main.rs` wires modules and delegates startup.
-- `src/model.rs` stores shared enums, command specs, effort constants, and labels.
-- `src/app.rs` owns application state and high-level chat/planning actions.
+- `src/model/` stores shared enums, command specs, effort constants, labels, language, and mode types.
+- `src/app/` owns application state and workflows: config, chats, commands, editor history, effort, worker events, footer state, onboarding, and model runs.
 - `src/runtime.rs` handles terminal startup, event loop, and keyboard input.
-- `src/ui.rs` renders the TUI screens, composer, footer, loader, and effort picker.
+- `src/ui/` renders the TUI screens and reusable widgets: command palette, prompt, footer, loader, transcript, onboarding, welcome, and effort picker.
 - `src/storage.rs` handles config, history, and saved chat files.
 - `src/auth.rs` checks and launches local CLI authentication.
 - `src/worker.rs` runs provider CLIs and the `spec-duel` engine.
