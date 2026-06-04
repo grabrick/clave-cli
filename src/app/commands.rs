@@ -2,16 +2,15 @@ use super::*;
 
 impl App {
     pub(crate) fn suggestions(&self) -> Vec<CommandSpec> {
-        if !self.input.starts_with('/') {
+        let Some(needle) = normalized_command_query(&self.input) else {
             return Vec::new();
-        }
+        };
 
-        let needle = self.input.trim();
         COMMANDS
             .iter()
             .copied()
             .filter(|command| {
-                command.usage.starts_with(needle) || command.insert.starts_with(needle)
+                command.usage.starts_with(&needle) || command.insert.starts_with(&needle)
             })
             .collect()
     }
@@ -41,7 +40,8 @@ impl App {
 
         self.remember_history_entry(&line);
 
-        if line.eq_ignore_ascii_case("logout") {
+        let normalized_plain = normalized_plain_command(&line);
+        if line.eq_ignore_ascii_case("logout") || normalized_plain == "logout" {
             self.push_command_invocation(&line);
             self.push_command_result(self.lang.choose("Auth screen", "Auth screen"));
             self.open_auth_screen(
@@ -53,8 +53,8 @@ impl App {
                     .to_string(),
                 true,
             );
-        } else if line.starts_with('/') {
-            self.handle_command(&line);
+        } else if let Some(command_line) = normalize_command_line_for_execution(&line) {
+            self.handle_command(&command_line);
         } else {
             self.start_chat(line);
         }

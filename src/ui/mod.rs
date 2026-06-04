@@ -37,7 +37,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         return;
     }
 
-    let command_mode = app.input.starts_with('/');
+    let command_mode = normalized_command_query(&app.input).is_some();
     let composer_height = composer_height(app, area.width).min(area.height.saturating_sub(2));
     let palette_height = if command_mode {
         command_palette_height(app, area.height, composer_height)

@@ -29,14 +29,14 @@ impl App {
     }
 
     pub(crate) fn refresh_command_palette_state(&mut self) {
-        let active =
-            self.input.starts_with('/') && self.onboarding.is_none() && !self.effort_picker;
+        let active = normalized_command_query(&self.input).is_some()
+            && self.onboarding.is_none()
+            && !self.effort_picker;
         if active {
-            if self.command_palette_opened_at.is_none() || self.command_palette_query != self.input
-            {
+            if self.command_palette_opened_at.is_none() {
                 self.command_palette_opened_at = Some(Instant::now());
-                self.command_palette_query = self.input.clone();
             }
+            self.command_palette_query = self.input.clone();
         } else if self.command_palette_opened_at.is_some() {
             self.command_palette_opened_at = None;
             self.command_palette_query.clear();

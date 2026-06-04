@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let lines = input_lines_wrapped(&app.input, area.width);
-    let command_mode = app.input.starts_with('/');
+    let command_mode = normalized_command_query(&app.input).is_some();
     let tick = current_effort_tick();
     let mut rendered = Vec::new();
 

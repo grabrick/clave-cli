@@ -198,4 +198,157 @@ impl CommandSpec {
             Language::Ru => self.description_ru,
         }
     }
+
+    pub(crate) fn command_token(self) -> &'static str {
+        self.usage.split_whitespace().next().unwrap_or(self.usage)
+    }
+}
+
+pub(crate) fn normalized_command_query(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let normalized = normalize_ru_keyboard_layout(trimmed);
+    normalized.starts_with('/').then_some(normalized)
+}
+
+pub(crate) fn normalize_command_line_for_execution(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let token_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    let token = &trimmed[..token_end];
+    let rest = trimmed[token_end..].trim_start();
+    let normalized_token = normalize_ru_keyboard_layout(token);
+
+    if is_known_command_token(&normalized_token) {
+        let rest = normalize_command_rest(&normalized_token, rest);
+        return Some(if rest.is_empty() {
+            normalized_token
+        } else {
+            format!("{normalized_token} {rest}")
+        });
+    }
+
+    token.starts_with('/').then(|| trimmed.to_string())
+}
+
+pub(crate) fn normalized_plain_command(input: &str) -> String {
+    normalize_ru_keyboard_layout(input.trim())
+}
+
+fn is_known_command_token(token: &str) -> bool {
+    COMMANDS
+        .iter()
+        .any(|command| command.command_token() == token)
+        || matches!(token, "/language" | "/duel" | "/auth" | "/exit")
+}
+
+fn normalize_command_rest(command: &str, rest: &str) -> String {
+    match command {
+        "/lang" | "/language" => {
+            let normalized = normalize_ru_keyboard_layout(rest);
+            match normalized.as_str() {
+                "ru" | "en" | "eng" | "english" | "russian" => normalized,
+                _ => rest.to_string(),
+            }
+        }
+        "/mode" => {
+            let normalized = normalize_ru_keyboard_layout(rest);
+            match normalized.as_str() {
+                "codex-only" | "claude-only" | "claude-codex" => normalized,
+                _ => rest.to_string(),
+            }
+        }
+        _ => rest.to_string(),
+    }
+}
+
+fn normalize_ru_keyboard_layout(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for (index, ch) in input.chars().enumerate() {
+        if index == 0 && ch == '.' {
+            output.push('/');
+        } else {
+            output.push(ru_keyboard_char(ch).unwrap_or(ch).to_ascii_lowercase());
+        }
+    }
+    output
+}
+
+fn ru_keyboard_char(ch: char) -> Option<char> {
+    Some(match ch {
+        'ё' | 'Ё' => '`',
+        'й' | 'Й' => 'q',
+        'ц' | 'Ц' => 'w',
+        'у' | 'У' => 'e',
+        'к' | 'К' => 'r',
+        'е' | 'Е' => 't',
+        'н' | 'Н' => 'y',
+        'г' | 'Г' => 'u',
+        'ш' | 'Ш' => 'i',
+        'щ' | 'Щ' => 'o',
+        'з' | 'З' => 'p',
+        'х' | 'Х' => '[',
+        'ъ' | 'Ъ' => ']',
+        'ф' | 'Ф' => 'a',
+        'ы' | 'Ы' => 's',
+        'в' | 'В' => 'd',
+        'а' | 'А' => 'f',
+        'п' | 'П' => 'g',
+        'р' | 'Р' => 'h',
+        'о' | 'О' => 'j',
+        'л' | 'Л' => 'k',
+        'д' | 'Д' => 'l',
+        'ж' | 'Ж' => ';',
+        'э' | 'Э' => '\'',
+        'я' | 'Я' => 'z',
+        'ч' | 'Ч' => 'x',
+        'с' | 'С' => 'c',
+        'м' | 'М' => 'v',
+        'и' | 'И' => 'b',
+        'т' | 'Т' => 'n',
+        'ь' | 'Ь' => 'm',
+        'б' | 'Б' => ',',
+        'ю' | 'Ю' => '.',
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_russian_layout_palette_query() {
+        assert_eq!(
+            normalized_command_query(".уаащке").as_deref(),
+            Some("/effort")
+        );
+        assert_eq!(
+            normalized_command_query("/ьщву сщвуч-щтдн").as_deref(),
+            Some("/mode codex-only")
+        );
+    }
+
+    #[test]
+    fn normalizes_known_command_without_touching_plan_body() {
+        assert_eq!(
+            normalize_command_line_for_execution(".здфт Привет").as_deref(),
+            Some("/plan Привет")
+        );
+    }
+
+    #[test]
+    fn normalizes_known_command_arguments() {
+        assert_eq!(
+            normalize_command_line_for_execution(".ьщву сщвуч-щтдн").as_deref(),
+            Some("/mode codex-only")
+        );
+        assert_eq!(normalized_plain_command("дщпщге"), "logout");
+    }
 }
