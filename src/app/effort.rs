@@ -23,12 +23,14 @@ impl App {
         match self.mode {
             Mode::CodexOnly => format!("codex {}", effort_label(self.codex_effort_index)),
             Mode::ClaudeOnly => format!("claude {}", effort_label(self.claude_effort_index)),
-            Mode::ClaudeCodex if self.linked_effort_split => format!(
+            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => format!(
                 "claude {} · codex {}",
                 effort_label(self.claude_effort_index),
                 effort_label(self.codex_effort_index)
             ),
-            Mode::ClaudeCodex => format!("shared {}", effort_label(self.effort_index)),
+            Mode::ClaudeCodex | Mode::CodexClaude => {
+                format!("shared {}", effort_label(self.effort_index))
+            }
         }
     }
 
@@ -36,17 +38,17 @@ impl App {
         match self.mode {
             Mode::CodexOnly => effort_label(self.codex_effort_index).to_string(),
             Mode::ClaudeOnly => effort_label(self.claude_effort_index).to_string(),
-            Mode::ClaudeCodex if self.linked_effort_split => format!(
+            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => format!(
                 "cl:{} cd:{}",
                 effort_label(self.claude_effort_index),
                 effort_label(self.codex_effort_index)
             ),
-            Mode::ClaudeCodex => effort_label(self.effort_index).to_string(),
+            Mode::ClaudeCodex | Mode::CodexClaude => effort_label(self.effort_index).to_string(),
         }
     }
 
     pub(crate) fn provider_effort(&self, provider: &str) -> &'static str {
-        if self.mode == Mode::ClaudeCodex && !self.linked_effort_split {
+        if matches!(self.mode, Mode::ClaudeCodex | Mode::CodexClaude) && !self.linked_effort_split {
             return effort_label(self.effort_index);
         }
 
@@ -61,7 +63,7 @@ impl App {
         match self.mode {
             Mode::CodexOnly => effort_label(self.codex_effort_index),
             Mode::ClaudeOnly => effort_label(self.claude_effort_index),
-            Mode::ClaudeCodex if self.linked_effort_split => {
+            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => {
                 let claude = effort_label(self.claude_effort_index);
                 let codex = effort_label(self.codex_effort_index);
                 if effort_weight(claude) >= effort_weight(codex) {
@@ -70,7 +72,7 @@ impl App {
                     codex
                 }
             }
-            Mode::ClaudeCodex => effort_label(self.effort_index),
+            Mode::ClaudeCodex | Mode::CodexClaude => effort_label(self.effort_index),
         }
     }
 
@@ -94,8 +96,8 @@ impl App {
 
     pub(crate) fn effort_picker_rows(&self) -> usize {
         match self.mode {
-            Mode::ClaudeCodex if self.linked_effort_split => 3,
-            Mode::ClaudeCodex => 2,
+            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => 3,
+            Mode::ClaudeCodex | Mode::CodexClaude => 2,
             _ => 1,
         }
     }
@@ -110,7 +112,7 @@ impl App {
                 self.claude_effort_index =
                     move_provider_effort_index("claude", self.claude_effort_index, direction);
             }
-            Mode::ClaudeCodex => match self.effort_focus {
+            Mode::ClaudeCodex | Mode::CodexClaude => match self.effort_focus {
                 0 => {
                     self.linked_effort_split = !self.linked_effort_split;
                     self.effort_index = normalize_common_effort_index(self.effort_index);
@@ -144,11 +146,11 @@ impl App {
                 self.claude_effort_index =
                     move_provider_effort_index("claude", self.claude_effort_index, direction);
             }
-            Mode::ClaudeCodex if self.linked_effort_split => {
+            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => {
                 self.linked_effort_split = false;
                 self.effort_index = normalize_common_effort_index(self.effort_index);
             }
-            Mode::ClaudeCodex => {
+            Mode::ClaudeCodex | Mode::CodexClaude => {
                 self.effort_index = move_common_effort_index(self.effort_index, direction);
             }
         }

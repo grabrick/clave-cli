@@ -5,10 +5,12 @@ pub(crate) fn draw_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let visible = area.height.saturating_sub(1) as usize;
     let mut lines = vec![Line::styled(
         "─".repeat(area.width as usize),
-        Style::default().fg(ACCENT_DIM),
+        Style::default().fg(app.theme.accent_dim()),
     )];
     for line in &app.transcript {
-        lines.extend(transcript_entry_lines(line, app.lang, area.width));
+        lines.extend(transcript_entry_lines(
+            line, app.lang, area.width, app.theme,
+        ));
     }
 
     if app.running {
@@ -23,23 +25,35 @@ pub(crate) fn draw_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(transcript, area);
 }
 
-pub(crate) fn transcript_entry_lines(line: &str, lang: Language, width: u16) -> Vec<Line<'static>> {
+pub(crate) fn transcript_entry_lines(
+    line: &str,
+    lang: Language,
+    width: u16,
+    theme: Theme,
+) -> Vec<Line<'static>> {
     if let Some(message) = line.strip_prefix("◆ ") {
-        return user_message_box(message, lang, width);
+        return user_message_box(message, lang, width, theme);
     }
 
     wrap_terminal_line(line, width)
         .into_iter()
-        .map(|wrapped| style_transcript_line(&wrapped, lang))
+        .map(|wrapped| style_transcript_line(&wrapped, lang, theme))
         .collect()
 }
 
-pub(crate) fn user_message_box(message: &str, lang: Language, width: u16) -> Vec<Line<'static>> {
+pub(crate) fn user_message_box(
+    message: &str,
+    lang: Language,
+    width: u16,
+    theme: Theme,
+) -> Vec<Line<'static>> {
     let width = width as usize;
     if width < 12 {
         return vec![Line::styled(
             format!("{} {}", lang.choose("Ты", "You"), message),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
         )];
     }
 
@@ -50,13 +64,13 @@ pub(crate) fn user_message_box(message: &str, lang: Language, width: u16) -> Vec
     let top_tail = "─".repeat(horizontal_width.saturating_sub(label.chars().count()));
     lines.push(Line::styled(
         format!("╭{label}{top_tail}╮"),
-        Style::default().fg(ACCENT),
+        Style::default().fg(theme.accent()),
     ));
 
     for wrapped in wrap_chars(message, content_width) {
         let padding = content_width.saturating_sub(wrapped.chars().count());
         lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(ACCENT)),
+            Span::styled("│ ", Style::default().fg(theme.accent())),
             Span::styled(
                 wrapped,
                 Style::default()
@@ -64,23 +78,25 @@ pub(crate) fn user_message_box(message: &str, lang: Language, width: u16) -> Vec
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" ".repeat(padding)),
-            Span::styled(" │", Style::default().fg(ACCENT)),
+            Span::styled(" │", Style::default().fg(theme.accent())),
         ]));
     }
 
     lines.push(Line::styled(
         format!("╰{}╯", "─".repeat(horizontal_width)),
-        Style::default().fg(ACCENT),
+        Style::default().fg(theme.accent()),
     ));
     lines
 }
 
-pub(crate) fn style_transcript_line(line: &str, lang: Language) -> Line<'static> {
+pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) -> Line<'static> {
     if line.starts_with("◆ ") {
         Line::from(vec![
             Span::styled(
                 lang.choose("Ты", "You"),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
             Span::raw(line.trim_start_matches("◆ ").to_string()),
@@ -89,7 +105,9 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language) -> Line<'static>
         Line::from(vec![
             Span::styled(
                 "❯ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(command.to_string()),
         ])
@@ -112,7 +130,9 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language) -> Line<'static>
         Line::from(vec![
             Span::styled(
                 "⏺ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(line.to_string()),
         ])
@@ -122,14 +142,18 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language) -> Line<'static>
         Line::from(vec![
             Span::styled(
                 "⏺ ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(rest.to_string()),
         ])
     } else if line.starts_with("✻ ") || line.starts_with("✦ ") {
         Line::styled(
             line.to_string(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
         )
     } else {
         Line::from(line.to_string())

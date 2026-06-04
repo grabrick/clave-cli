@@ -11,7 +11,7 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
             frame.render_widget(
                 Paragraph::new(text).style(
                     Style::default()
-                        .fg(ACCENT_SOFT)
+                        .fg(app.theme.accent_soft())
                         .add_modifier(Modifier::BOLD),
                 ),
                 area,
@@ -39,7 +39,7 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let gap = width.saturating_sub(left.chars().count() + right_slot_width);
     let right_padding = right_slot_width.saturating_sub(right_width);
     let line = Line::from(vec![
-        Span::styled(left, Style::default().fg(ACCENT_SOFT)),
+        Span::styled(left, Style::default().fg(app.theme.accent_soft())),
         Span::raw(" ".repeat(gap)),
         Span::raw(" ".repeat(right_padding)),
         Span::styled(right, right_style),
@@ -57,6 +57,13 @@ pub(crate) fn footer_right_segments(app: &App) -> Vec<String> {
     }
 
     segments.push(format!("mode {}", app.mode.as_str()));
+    segments.push(format!("chat {}", app.direct_provider.as_str()));
+    segments.push(format!(
+        "roles {}>{}",
+        app.mode.architect_provider().as_str(),
+        app.mode.reviewer_provider().as_str()
+    ));
+    segments.push(format!("theme {}", app.theme.as_str()));
     segments.push(format!("effort {}", app.compact_effort_summary()));
     segments
 }
@@ -80,7 +87,7 @@ pub(crate) fn footer_right_slot_width(app: &App) -> usize {
 }
 
 pub(crate) fn footer_right_segment(app: &App) -> (String, Style) {
-    let base_style = Style::default().fg(ACCENT_SOFT);
+    let base_style = Style::default().fg(app.theme.accent_soft());
     let Some(changed_at) = app.footer_right_changed_at else {
         return (app.footer_right_text.clone(), base_style);
     };
@@ -94,22 +101,34 @@ pub(crate) fn footer_right_segment(app: &App) -> (String, Style) {
     if elapsed_ms < 360 {
         (
             previous.clone(),
-            Style::default().fg(footer_transition_color(elapsed_ms, false)),
+            Style::default().fg(footer_transition_color(app.theme, elapsed_ms, false)),
         )
     } else {
         (
             app.footer_right_text.clone(),
-            Style::default().fg(footer_transition_color(elapsed_ms - 360, true)),
+            Style::default().fg(footer_transition_color(app.theme, elapsed_ms - 360, true)),
         )
     }
 }
 
-pub(crate) fn footer_transition_color(elapsed_ms: u128, entering: bool) -> Color {
+pub(crate) fn footer_transition_color(theme: Theme, elapsed_ms: u128, entering: bool) -> Color {
     let step = (elapsed_ms / 90).min(4) as usize;
-    let palette: &[u8] = if entering {
-        &[240, 243, 246, 183, 183]
+    let palette = if entering {
+        [
+            theme.accent_dim(),
+            Color::DarkGray,
+            Color::Gray,
+            theme.accent_soft(),
+            theme.accent_soft(),
+        ]
     } else {
-        &[183, 246, 243, 240, 240]
+        [
+            theme.accent_soft(),
+            Color::Gray,
+            Color::DarkGray,
+            theme.accent_dim(),
+            theme.accent_dim(),
+        ]
     };
-    Color::Indexed(palette[step])
+    palette[step]
 }

@@ -99,11 +99,50 @@ impl App {
                 "codex-only" => self.apply_mode(Mode::CodexOnly),
                 "claude-only" => self.apply_mode(Mode::ClaudeOnly),
                 "claude-codex" => self.apply_mode(Mode::ClaudeCodex),
+                "codex-claude" => self.apply_mode(Mode::CodexClaude),
                 _ => self.push_system(self.lang.choose(
-                    "Использование: /mode codex-only|claude-only|claude-codex",
-                    "Usage: /mode codex-only|claude-only|claude-codex",
+                    "Использование: /mode codex-only|claude-only|claude-codex|codex-claude",
+                    "Usage: /mode codex-only|claude-only|claude-codex|codex-claude",
                 )),
             },
+            "/settings" => self.open_settings(),
+            "/chat-model" => match Provider::from_str(rest.trim()) {
+                Some(provider) => self.set_direct_provider(provider),
+                None => self.push_system(self.lang.choose(
+                    "Использование: /chat-model codex|claude",
+                    "Usage: /chat-model codex|claude",
+                )),
+            },
+            "/theme" => match Theme::from_str(rest.trim()) {
+                Some(theme) => self.set_theme(theme),
+                None => self.push_system(self.lang.choose(
+                    "Использование: /theme purple|cyan|rose|amber|mono",
+                    "Usage: /theme purple|cyan|rose|amber|mono",
+                )),
+            },
+            "/roles" => {
+                let providers = rest
+                    .split(|ch: char| ch.is_whitespace() || matches!(ch, '>' | '-' | '→'))
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>();
+                match providers.as_slice() {
+                    [architect, reviewer] => {
+                        match (Provider::from_str(architect), Provider::from_str(reviewer)) {
+                            (Some(architect), Some(reviewer)) => {
+                                self.set_roles(architect, reviewer);
+                            }
+                            _ => self.push_system(self.lang.choose(
+                                "Использование: /roles codex|claude codex|claude",
+                                "Usage: /roles codex|claude codex|claude",
+                            )),
+                        }
+                    }
+                    _ => self.push_system(self.lang.choose(
+                        "Использование: /roles <исполнитель> <ревьюер>",
+                        "Usage: /roles <executor> <reviewer>",
+                    )),
+                }
+            }
             "/plan" | "/duel" => {
                 if rest.trim().is_empty() {
                     self.push_system(
@@ -151,13 +190,17 @@ impl App {
             }
             "/status" => {
                 self.push_system(format!(
-                    "{}={} {}={} {}={} {}={} {}={}",
+                    "{}={} {}={} {}={} chat={} theme={} roles={}>{} {}={} {}={}",
                     self.lang.choose("режим", "mode"),
                     self.mode.as_str(),
                     self.lang.choose("язык", "lang"),
                     self.lang.as_str(),
                     self.lang.choose("раунды", "rounds"),
                     self.rounds,
+                    self.direct_provider.as_str(),
+                    self.theme.as_str(),
+                    self.mode.architect_provider().as_str(),
+                    self.mode.reviewer_provider().as_str(),
                     "effort",
                     self.effort_summary(),
                     "out",

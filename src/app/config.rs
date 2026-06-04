@@ -4,6 +4,8 @@ use super::*;
 pub(crate) struct AppConfig {
     pub(crate) onboarding_done: bool,
     pub(crate) mode: Mode,
+    pub(crate) direct_provider: Provider,
+    pub(crate) theme: Theme,
     pub(crate) lang: Language,
     pub(crate) rounds: usize,
     pub(crate) out_dir: String,
@@ -19,6 +21,8 @@ impl Default for AppConfig {
         Self {
             onboarding_done: false,
             mode: Mode::CodexOnly,
+            direct_provider: Provider::Codex,
+            theme: Theme::Purple,
             lang: Language::Ru,
             rounds: 2,
             out_dir: ".ai-runs".to_string(),
@@ -36,6 +40,8 @@ impl App {
         AppConfig {
             onboarding_done,
             mode: self.mode,
+            direct_provider: self.direct_provider,
+            theme: self.theme,
             lang: self.lang,
             rounds: self.rounds,
             out_dir: self.out_dir.clone(),

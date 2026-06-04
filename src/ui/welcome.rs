@@ -15,11 +15,13 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .title(Line::from(vec![
             Span::styled(
                 " Duel Code ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(app.theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled("v0.1.0 ", Style::default().fg(MUTED)),
         ]))
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(app.theme.accent()));
 
     frame.render_widget(block, card);
 
@@ -51,18 +53,22 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         ),
         centered_line(user, left_width, Style::default().fg(MUTED)),
         Line::from(""),
-        centered_line("╭──╮", left_width, Style::default().fg(ACCENT)),
+        centered_line("╭──╮", left_width, Style::default().fg(app.theme.accent())),
         centered_line(
             "›──◆──‹",
             left_width,
             Style::default()
-                .fg(ACCENT_SOFT)
+                .fg(app.theme.accent_soft())
                 .add_modifier(Modifier::BOLD),
         ),
-        centered_line("╰──╯", left_width, Style::default().fg(ACCENT)),
+        centered_line("╰──╯", left_width, Style::default().fg(app.theme.accent())),
         Line::from(""),
         centered_line(
-            format!("{} · {}", app.mode.as_str(), app.compact_effort_summary()),
+            format!(
+                "{} · chat {}",
+                app.mode.as_str(),
+                app.direct_provider.as_str()
+            ),
             left_width,
             Style::default().fg(Color::DarkGray),
         ),
@@ -74,7 +80,9 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let right = vec![
         Line::from(Span::styled(
             app.lang.choose("Быстрый старт", "Tips for getting started"),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(app.theme.accent())
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(app.lang.choose(
             "Введи сообщение и нажми Enter",
@@ -87,7 +95,9 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         separator_line(right_width),
         Line::from(Span::styled(
             app.lang.choose("Что нового", "What's new"),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(app.theme.accent())
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(app.lang.choose(
             "Обычный ввод отвечает напрямую моделью",
@@ -96,17 +106,20 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         separator_line(right_width),
         Line::from(Span::styled(
             "Overview",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(app.theme.accent())
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(format!(
-            "{} {} · effort {}",
+            "{} {} · chat {} · effort {}",
             app.lang.choose("Режим", "Mode"),
             app.mode.as_str(),
+            app.direct_provider.as_str(),
             app.effort_summary()
         )),
         Line::from(app.lang.choose(
-            "/chats · /new · /resume · /effort",
-            "/chats · /new · /resume · /effort",
+            "/settings · /chats · /new · /effort",
+            "/settings · /chats · /new · /effort",
         )),
     ];
 

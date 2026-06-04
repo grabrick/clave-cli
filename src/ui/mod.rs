@@ -9,6 +9,7 @@ pub(crate) mod layout;
 pub(crate) mod loader;
 pub(crate) mod onboarding;
 pub(crate) mod prompt;
+pub(crate) mod settings;
 pub(crate) mod transcript;
 pub(crate) mod welcome;
 
@@ -20,6 +21,7 @@ pub(crate) use layout::*;
 pub(crate) use loader::*;
 pub(crate) use onboarding::*;
 pub(crate) use prompt::*;
+pub(crate) use settings::*;
 pub(crate) use transcript::*;
 pub(crate) use welcome::*;
 
@@ -34,6 +36,11 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
 
     if app.effort_picker {
         draw_effort_screen(frame, area, app);
+        return;
+    }
+
+    if app.settings_open {
+        draw_settings_screen(frame, area, app);
         return;
     }
 

@@ -124,6 +124,30 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Настроить уровень усилия модели",
     },
     CommandSpec {
+        usage: "/settings",
+        insert: "/settings",
+        description_en: "Open model, theme, and role settings",
+        description_ru: "Открыть настройки моделей, темы и ролей",
+    },
+    CommandSpec {
+        usage: "/chat-model codex|claude",
+        insert: "/chat-model ",
+        description_en: "Choose the model for plain messages",
+        description_ru: "Выбрать модель для простых сообщений",
+    },
+    CommandSpec {
+        usage: "/theme purple|cyan|rose|amber|mono",
+        insert: "/theme ",
+        description_en: "Choose terminal color palette",
+        description_ru: "Выбрать цветовую гамму терминала",
+    },
+    CommandSpec {
+        usage: "/roles <executor> <reviewer>",
+        insert: "/roles ",
+        description_en: "Choose planning executor and reviewer",
+        description_ru: "Выбрать исполнителя и ревьюера планирования",
+    },
+    CommandSpec {
         usage: "/logout",
         insert: "/logout",
         description_en: "Return to CLI authentication",
@@ -257,12 +281,9 @@ fn normalize_command_rest(command: &str, rest: &str) -> String {
                 _ => rest.to_string(),
             }
         }
-        "/mode" => {
+        "/mode" | "/chat-model" | "/theme" | "/roles" => {
             let normalized = normalize_ru_keyboard_layout(rest);
-            match normalized.as_str() {
-                "codex-only" | "claude-only" | "claude-codex" => normalized,
-                _ => rest.to_string(),
-            }
+            normalized
         }
         _ => rest.to_string(),
     }
@@ -348,6 +369,22 @@ mod tests {
         assert_eq!(
             normalize_command_line_for_execution(".ьщву сщвуч-щтдн").as_deref(),
             Some("/mode codex-only")
+        );
+        assert_eq!(
+            normalize_command_line_for_execution(".ыуеештпы").as_deref(),
+            Some("/settings")
+        );
+        assert_eq!(
+            normalize_command_line_for_execution(".срфе-ьщвуд сдфгву").as_deref(),
+            Some("/chat-model claude")
+        );
+        assert_eq!(
+            normalize_command_line_for_execution(".еруьу кщыу").as_deref(),
+            Some("/theme rose")
+        );
+        assert_eq!(
+            normalize_command_line_for_execution(".кщдуы сщвуч сдфгву").as_deref(),
+            Some("/roles codex claude")
         );
         assert_eq!(normalized_plain_command("дщпщге"), "logout");
     }

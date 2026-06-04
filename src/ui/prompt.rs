@@ -6,18 +6,25 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let tick = current_effort_tick();
     let mut rendered = Vec::new();
 
-    rendered.push(prompt_rule_line(area.width, command_mode, tick));
+    rendered.push(prompt_rule_line(area.width, command_mode, tick, app.theme));
     for (index, line) in lines.iter().enumerate() {
         let prefix = if index == 0 { "› " } else { "  " };
         rendered.push(Line::from(vec![
             Span::styled(
                 prefix,
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(app.theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(line.clone()),
         ]));
     }
-    rendered.push(prompt_rule_line(area.width, command_mode, tick + 3));
+    rendered.push(prompt_rule_line(
+        area.width,
+        command_mode,
+        tick + 3,
+        app.theme,
+    ));
 
     frame.render_widget(Paragraph::new(rendered), area);
 
@@ -28,17 +35,23 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
 }
 
-pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64) -> Line<'static> {
+pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64, theme: Theme) -> Line<'static> {
     if !active {
-        return Line::styled("─".repeat(width as usize), Style::default().fg(ACCENT_DIM));
+        return Line::styled(
+            "─".repeat(width as usize),
+            Style::default().fg(theme.accent_dim()),
+        );
     }
 
     let mut spans = Vec::new();
     for index in 0..width as usize {
-        spans.push(Span::styled(
-            "─",
-            Style::default().fg(shimmer_color("xhigh", index, tick)),
-        ));
+        let color = match ((index as u64 + tick) % 6) as usize {
+            0 => theme.accent_dim(),
+            1 | 5 => theme.accent(),
+            2..=4 => theme.accent_soft(),
+            _ => theme.accent(),
+        };
+        spans.push(Span::styled("─", Style::default().fg(color)));
     }
     Line::from(spans)
 }

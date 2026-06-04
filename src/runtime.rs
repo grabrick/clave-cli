@@ -123,6 +123,11 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if app.settings_open {
+        handle_settings_key(app, key);
+        return;
+    }
+
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
 
@@ -367,6 +372,34 @@ pub(crate) fn handle_effort_key(app: &mut App, key: KeyEvent) {
                 app.restore_effort_snapshot(snapshot);
             }
             app.effort_picker = false;
+            app.status = app.lang.choose("готов", "ready").to_string();
+            app.push_command_result("Cancelled");
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.handle_ctrl_c();
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn handle_settings_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.adjust_settings_focus(-1),
+        KeyCode::Down => app.adjust_settings_focus(1),
+        KeyCode::Left => app.adjust_settings_value(-1),
+        KeyCode::Right => app.adjust_settings_value(1),
+        KeyCode::Enter => {
+            app.settings_open = false;
+            app.settings_original = None;
+            app.status = app.lang.choose("готов", "ready").to_string();
+            app.save_current_config(true);
+            app.push_command_result(format!("Saved {}", app.settings_summary()));
+        }
+        KeyCode::Esc => {
+            if let Some(snapshot) = app.settings_original.take() {
+                app.restore_settings_snapshot(snapshot);
+            }
+            app.settings_open = false;
             app.status = app.lang.choose("готов", "ready").to_string();
             app.push_command_result("Cancelled");
         }

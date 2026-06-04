@@ -156,6 +156,16 @@ pub(crate) fn load_config(path: &Path) -> AppConfig {
                     config.mode = mode;
                 }
             }
+            "direct_provider" | "chat_provider" | "direct_chat_provider" => {
+                if let Some(provider) = Provider::from_str(value) {
+                    config.direct_provider = provider;
+                }
+            }
+            "theme" | "color_theme" | "palette" => {
+                if let Some(theme) = Theme::from_str(value) {
+                    config.theme = theme;
+                }
+            }
             "lang" => {
                 if let Some(lang) = Language::from_str(value) {
                     config.lang = lang;
@@ -257,6 +267,8 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
         concat!(
             "onboarding_done={}\n",
             "mode=\"{}\"\n",
+            "direct_provider=\"{}\"\n",
+            "theme=\"{}\"\n",
             "lang=\"{}\"\n",
             "rounds={}\n",
             "out_dir=\"{}\"\n",
@@ -268,6 +280,8 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
         ),
         config.onboarding_done,
         config.mode.as_str(),
+        config.direct_provider.as_str(),
+        config.theme.as_str(),
         config.lang.as_str(),
         config.rounds,
         config.out_dir,

@@ -10,14 +10,15 @@ pub(crate) fn initial_transcript(_lang: Language) -> Vec<String> {
 }
 
 pub(crate) fn provider_count() -> usize {
-    3
+    4
 }
 
 pub(crate) fn provider_mode(index: usize) -> Mode {
     match index {
         0 => Mode::CodexOnly,
         1 => Mode::ClaudeCodex,
-        2 => Mode::ClaudeOnly,
+        2 => Mode::CodexClaude,
+        3 => Mode::ClaudeOnly,
         _ => Mode::CodexOnly,
     }
 }
@@ -26,7 +27,8 @@ pub(crate) fn provider_index(mode: Mode) -> usize {
     match mode {
         Mode::CodexOnly => 0,
         Mode::ClaudeCodex => 1,
-        Mode::ClaudeOnly => 2,
+        Mode::CodexClaude => 2,
+        Mode::ClaudeOnly => 3,
     }
 }
 
@@ -36,6 +38,10 @@ pub(crate) fn provider_description(mode: Mode, lang: Language) -> &'static str {
         Mode::ClaudeCodex => lang.choose(
             "Claude пишет, Codex ревьюит",
             "Claude drafts, Codex reviews",
+        ),
+        Mode::CodexClaude => lang.choose(
+            "Codex пишет, Claude ревьюит",
+            "Codex drafts, Claude reviews",
         ),
         Mode::ClaudeOnly => lang.choose("Claude пишет и ревьюит", "Claude drafts and reviews"),
     }

@@ -6,6 +6,36 @@ pub(crate) fn auth_requirements_ready(mode: Mode, onboarding: &Onboarding) -> bo
         && (!mode.needs_claude() || onboarding.claude_authenticated)
 }
 
+pub(crate) fn provider_auth_ready(provider: Provider, onboarding: &Onboarding) -> bool {
+    match provider {
+        Provider::Codex => onboarding.codex_authenticated,
+        Provider::Claude => onboarding.claude_authenticated,
+    }
+}
+
+pub(crate) fn missing_provider_auth_text(
+    provider: Provider,
+    onboarding: &Onboarding,
+    lang: Language,
+) -> String {
+    match provider {
+        Provider::Codex if onboarding.codex_authenticated => {
+            lang.choose("всё готово", "all ready").to_string()
+        }
+        Provider::Codex if onboarding.codex_installed => "Codex".to_string(),
+        Provider::Codex => lang
+            .choose("Codex CLI не найден", "Codex CLI missing")
+            .to_string(),
+        Provider::Claude if onboarding.claude_authenticated => {
+            lang.choose("всё готово", "all ready").to_string()
+        }
+        Provider::Claude if onboarding.claude_installed => "Claude".to_string(),
+        Provider::Claude => lang
+            .choose("Claude CLI не найден", "Claude CLI missing")
+            .to_string(),
+    }
+}
+
 pub(crate) fn missing_auth_text(mode: Mode, onboarding: &Onboarding, lang: Language) -> String {
     let mut missing = Vec::new();
     if mode.needs_codex() && !onboarding.codex_authenticated {

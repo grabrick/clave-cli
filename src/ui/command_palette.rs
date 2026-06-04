@@ -6,14 +6,14 @@ pub(crate) fn command_palette_fade_level(app: &App) -> usize {
         .unwrap_or(7)
 }
 
-pub(crate) fn command_palette_accent(level: usize) -> Color {
+pub(crate) fn command_palette_accent(theme: Theme, level: usize) -> Color {
     match level {
         0 => Color::Indexed(236),
         1 => Color::Indexed(238),
         2 => Color::Indexed(240),
-        3 => Color::Indexed(97),
-        4 => Color::Indexed(141),
-        _ => ACCENT_SOFT,
+        3 => theme.accent_dim(),
+        4 => theme.accent(),
+        _ => theme.accent_soft(),
     }
 }
 
@@ -28,12 +28,12 @@ pub(crate) fn command_palette_muted(level: usize) -> Color {
     }
 }
 
-pub(crate) fn command_palette_selected_bg(level: usize) -> Option<Color> {
+pub(crate) fn command_palette_selected_bg(theme: Theme, level: usize) -> Option<Color> {
     match level {
         0..=2 => None,
         3 => Some(Color::Indexed(236)),
         4 => Some(Color::Indexed(238)),
-        _ => Some(ACCENT_BG),
+        _ => Some(theme.accent_bg()),
     }
 }
 
@@ -67,15 +67,15 @@ pub(crate) fn draw_command_screen(frame: &mut Frame<'_>, area: Rect, app: &App) 
                     .fg(if row_fade >= 5 {
                         Color::White
                     } else {
-                        command_palette_accent(row_fade)
+                        command_palette_accent(app.theme, row_fade)
                     })
                     .add_modifier(Modifier::BOLD);
-                if let Some(bg) = command_palette_selected_bg(row_fade) {
+                if let Some(bg) = command_palette_selected_bg(app.theme, row_fade) {
                     style = style.bg(bg);
                 }
                 style
             } else {
-                Style::default().fg(command_palette_accent(row_fade))
+                Style::default().fg(command_palette_accent(app.theme, row_fade))
             };
             let desc_style = if is_selected {
                 Style::default().fg(if row_fade >= 5 {

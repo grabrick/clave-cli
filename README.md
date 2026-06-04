@@ -26,10 +26,10 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 ## Project Layout
 
 - `src/main.rs` wires modules and delegates startup.
-- `src/model/` stores shared enums, command specs, effort constants, labels, language, and mode types.
-- `src/app/` owns application state and workflows: config, chats, commands, editor history, effort, worker events, footer state, onboarding, and model runs.
+- `src/model/` stores shared enums, command specs, effort constants, labels, language, provider, theme, and mode types.
+- `src/app/` owns application state and workflows: config, chats, commands, editor history, effort, settings, worker events, footer state, onboarding, and model runs.
 - `src/runtime.rs` handles terminal startup, event loop, and keyboard input.
-- `src/ui/` renders the TUI screens and reusable widgets: command palette, prompt, footer, loader, transcript, onboarding, welcome, and effort picker.
+- `src/ui/` renders the TUI screens and reusable widgets: command palette, prompt, footer, loader, transcript, onboarding, welcome, settings, and effort picker.
 - `src/storage.rs` handles config, history, and saved chat files.
 - `src/auth.rs` checks and launches local CLI authentication.
 - `src/worker.rs` runs provider CLIs and the `spec-duel` engine.
@@ -38,23 +38,28 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 Current TUI shape:
 
 - Claude Code-style welcome panel;
-- soft purple accent color;
+- selectable accent themes: purple, cyan, rose, amber, and mono;
 - Russian interface by default;
 - first-run setup wizard saved to `~/.duel/config`;
 - persistent input history saved to `~/.duel/history`;
 - saved chats stored under `~/.duel/chats`;
 - startup opens the welcome screen instead of auto-restoring the last chat;
 - saved chats can be reopened with `/chats` and `/resume <id>`;
-- plain input sends a direct chat request to the selected primary model;
+- plain input sends a direct chat request to the selected direct-chat model;
 - `/plan <task>` runs the multi-agent `spec-duel` planning loop;
 - final brief content is printed back into the chat after each `/plan` run;
 - bordered user messages in the transcript;
 - bottom composer;
 - animated loader while a model request is running, with stable text and token estimate;
 - Codex `tokens used` output is parsed after direct chat responses when available;
-- slash-command palette appears below the input when it starts with `/`;
+- slash-command palette appears below the input when it starts with `/`, including Russian-layout command normalization;
 - `/setup` reopens the setup wizard;
 - `/plan <task>` runs spec-duel planning;
+- `/settings` opens the settings screen;
+- `/chat-model codex|claude` chooses who answers simple direct messages;
+- `/theme purple|cyan|rose|amber|mono` changes the accent palette;
+- `/roles <executor> <reviewer>` chooses the planning/code executor and reviewer;
+- `/mode codex-only|claude-codex|codex-claude|claude-only` changes the orchestration pairing;
 - `/new` starts a new saved chat;
 - `/chats` lists saved chats;
 - `/resume <id>` opens a saved chat;
@@ -85,11 +90,13 @@ On first launch the TUI asks for the default agent pairing:
 
 - `codex-only`;
 - `claude-codex`;
+- `codex-claude`;
 - `claude-only`.
 
 The setup screen checks `codex login status` and `claude auth status --text`.
 It can launch `codex login` and `claude auth login`, then saves startup defaults
-for language, review rounds, effort, output directory, and mode.
+for language, review rounds, effort, output directory, mode, direct chat
+provider, and theme.
 
 The local launcher can be symlinked or copied into a directory on your `PATH`
 as `duel`.

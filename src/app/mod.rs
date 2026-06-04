@@ -11,15 +11,19 @@ mod external;
 mod footer;
 mod onboarding;
 mod runs;
+mod settings;
 
 pub(crate) use config::*;
 pub(crate) use effort::*;
 pub(crate) use events::*;
 pub(crate) use external::*;
 pub(crate) use onboarding::*;
+pub(crate) use settings::*;
 
 pub(crate) struct App {
     pub(crate) mode: Mode,
+    pub(crate) direct_provider: Provider,
+    pub(crate) theme: Theme,
     pub(crate) lang: Language,
     pub(crate) rounds: usize,
     pub(crate) out_dir: String,
@@ -56,6 +60,9 @@ pub(crate) struct App {
     pub(crate) effort_picker: bool,
     pub(crate) effort_original: Option<EffortSnapshot>,
     pub(crate) effort_focus: usize,
+    pub(crate) settings_open: bool,
+    pub(crate) settings_original: Option<SettingsSnapshot>,
+    pub(crate) settings_focus: usize,
     pub(crate) effort_index: usize,
     pub(crate) codex_effort_index: usize,
     pub(crate) claude_effort_index: usize,
@@ -92,6 +99,8 @@ impl App {
 
         Self {
             mode: config.mode,
+            direct_provider: config.direct_provider,
+            theme: config.theme,
             lang: config.lang,
             rounds: config.rounds,
             out_dir: config.out_dir,
@@ -128,6 +137,9 @@ impl App {
             effort_picker: false,
             effort_original: None,
             effort_focus: 0,
+            settings_open: false,
+            settings_original: None,
+            settings_focus: 0,
             effort_index: config.effort_index,
             codex_effort_index: config.codex_effort_index,
             claude_effort_index: config.claude_effort_index,

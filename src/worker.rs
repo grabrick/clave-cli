@@ -41,13 +41,6 @@ pub(crate) fn format_token_count(tokens: usize) -> String {
     }
 }
 
-pub(crate) fn chat_provider(mode: Mode) -> &'static str {
-    match mode {
-        Mode::CodexOnly => "codex",
-        Mode::ClaudeOnly | Mode::ClaudeCodex => "claude",
-    }
-}
-
 pub(crate) fn provider_display(provider: &str, lang: Language) -> &'static str {
     match provider {
         "codex" => "Codex",

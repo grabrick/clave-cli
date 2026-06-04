@@ -21,7 +21,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
     )));
     lines.push(Line::from(""));
 
-    if matches!(app.mode, Mode::ClaudeCodex) {
+    if matches!(app.mode, Mode::ClaudeCodex | Mode::CodexClaude) {
         push_linked_effort_mode_line(&mut lines, area.width, app, tick);
     }
     push_effort_axis(&mut lines, area.width, scale_start, scale_width, app.lang);
@@ -58,7 +58,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 lang: app.lang,
             },
         ),
-        Mode::ClaudeCodex => {
+        Mode::ClaudeCodex | Mode::CodexClaude => {
             if app.linked_effort_split {
                 push_effort_scale_block(
                     &mut lines,
@@ -121,11 +121,11 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
             "Claude: --effort, доступно low|medium|high|max",
             "Claude: --effort, available low|medium|high|max",
         ),
-        Mode::ClaudeCodex if app.linked_effort_split => app.lang.choose(
+        Mode::ClaudeCodex | Mode::CodexClaude if app.linked_effort_split => app.lang.choose(
             "Раздельно: Claude и Codex настраиваются независимо",
             "Per-model: Claude and Codex are adjusted independently",
         ),
-        Mode::ClaudeCodex => app.lang.choose(
+        Mode::ClaudeCodex | Mode::CodexClaude => app.lang.choose(
             "Общий effort применяется к обеим моделям",
             "Shared effort is sent to both models",
         ),

@@ -10,11 +10,11 @@ impl App {
             return;
         }
 
-        if !self.ensure_auth_ready_for_current_mode() {
+        if !self.ensure_auth_ready_for_provider(self.direct_provider) {
             return;
         }
 
-        let provider = chat_provider(self.mode);
+        let provider = self.direct_provider.as_str();
         let provider_name = provider_display(provider, self.lang);
         let effort = self.provider_effort(provider).to_string();
         let context = recent_chat_context(&self.transcript, 40);
@@ -127,14 +127,12 @@ impl App {
         let rounds = self.rounds.to_string();
         let out_dir = self.out_dir.clone();
         let common_effort = effort_label(self.effort_index).to_string();
-        let architect_effort = match mode {
-            Mode::CodexOnly => self.provider_effort("codex").to_string(),
-            Mode::ClaudeOnly | Mode::ClaudeCodex => self.provider_effort("claude").to_string(),
-        };
-        let reviewer_effort = match mode {
-            Mode::ClaudeOnly => self.provider_effort("claude").to_string(),
-            Mode::CodexOnly | Mode::ClaudeCodex => self.provider_effort("codex").to_string(),
-        };
+        let architect_provider = mode.architect_provider();
+        let reviewer_provider = mode.reviewer_provider();
+        let architect_effort = self
+            .provider_effort(architect_provider.as_str())
+            .to_string();
+        let reviewer_effort = self.provider_effort(reviewer_provider.as_str()).to_string();
         let work_dir = engine_work_dir(&engine);
         let work_dir_arg = work_dir.to_string_lossy().to_string();
 
@@ -157,6 +155,14 @@ impl App {
                         "claude".to_string(),
                         "--reviewer".to_string(),
                         "codex".to_string(),
+                    ]);
+                }
+                Mode::CodexClaude => {
+                    args.extend([
+                        "--architect".to_string(),
+                        "codex".to_string(),
+                        "--reviewer".to_string(),
+                        "claude".to_string(),
                     ]);
                 }
             }
