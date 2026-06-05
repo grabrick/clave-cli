@@ -8,6 +8,7 @@ pub(crate) mod mode;
 pub(crate) mod overlay;
 pub(crate) mod provider;
 pub(crate) mod theme;
+pub(crate) mod usage;
 
 pub(crate) use commands::*;
 pub(crate) use constants::*;
@@ -17,5 +18,6 @@ pub(crate) use mode::*;
 pub(crate) use overlay::*;
 pub(crate) use provider::*;
 pub(crate) use theme::*;
+pub(crate) use usage::*;
 
 pub(crate) type AnyResult<T> = Result<T, Box<dyn Error>>;
