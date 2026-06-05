@@ -141,6 +141,23 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
 
+    // Гейт плана: Enter/Esc имеют особую семантику; остальное — обычный ввод
+    // (набор замечания для доработки). Ctrl/Alt-комбинации не перехватываем.
+    if app.plan_gate_active() && !ctrl && !alt {
+        match key.code {
+            KeyCode::Enter => {
+                app.submit_plan_gate();
+                return;
+            }
+            KeyCode::Esc => {
+                app.cancel_plan();
+                return;
+            }
+            KeyCode::BackTab => return, // режим не меняем, пока открыт гейт
+            _ => {}
+        }
+    }
+
     if ctrl {
         match key.code {
             KeyCode::Char('c') => app.handle_ctrl_c(),
