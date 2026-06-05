@@ -14,6 +14,7 @@ mod plan;
 mod runs;
 mod search;
 mod settings;
+mod tandem;
 
 pub(crate) use config::*;
 pub(crate) use effort::*;
