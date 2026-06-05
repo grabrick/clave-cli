@@ -31,6 +31,98 @@ pub(crate) fn plan_gate_action(input: &str) -> PlanGateAction {
     }
 }
 
+impl App {
+    /// Фаза 1: запустить read-only генерацию плана для новой задачи.
+    pub(crate) fn start_plan(&mut self, task: String) {
+        let context = recent_chat_context(&self.transcript, 40);
+        let prompt = plan_prompt(&task, &context, self.lang);
+        self.plan_flow = PlanFlow::Planning { task: task.clone() };
+        self.run_provider_chat(format!("◆ {task}"), prompt, RunAccess::PlanReadonly, true);
+        if self.running {
+            self.status = self
+                .lang
+                .choose("составляю план...", "drafting plan...")
+                .to_string();
+        } else {
+            // запуск не стартовал (занят/нет авторизации) — снять флаг фазы
+            self.plan_flow = PlanFlow::None;
+        }
+    }
+
+    /// Доработать показанный план по замечанию пользователя (снова фаза 1).
+    pub(crate) fn refine_plan(&mut self, feedback: String) {
+        let Some(pending) = self.pending_plan.take() else {
+            return;
+        };
+        let context = recent_chat_context(&self.transcript, 40);
+        let prompt = refine_prompt(&pending.task, &pending.plan, &feedback, &context, self.lang);
+        self.plan_flow = PlanFlow::Planning { task: pending.task };
+        self.run_provider_chat(format!("◆ {feedback}"), prompt, RunAccess::PlanReadonly, true);
+        if self.running {
+            self.status = self
+                .lang
+                .choose("дорабатываю план...", "refining plan...")
+                .to_string();
+        } else {
+            self.plan_flow = PlanFlow::None;
+        }
+    }
+
+    /// Фаза 2: выполнить одобренный план с полным доступом.
+    pub(crate) fn approve_plan(&mut self) {
+        let Some(pending) = self.pending_plan.take() else {
+            return;
+        };
+        let context = recent_chat_context(&self.transcript, 40);
+        let prompt = execute_prompt(&pending.task, &pending.plan, &context, self.lang);
+        self.plan_flow = PlanFlow::Executing;
+        self.run_provider_chat(
+            format!("▶ {}", self.lang.choose("Выполняю план", "Executing plan")),
+            prompt,
+            RunAccess::PlanExecute,
+            false,
+        );
+        if self.running {
+            self.status = self
+                .lang
+                .choose("выполняю план...", "executing plan...")
+                .to_string();
+        } else {
+            self.plan_flow = PlanFlow::None;
+        }
+    }
+
+    /// Отменить ожидающий план без выполнения.
+    pub(crate) fn cancel_plan(&mut self) {
+        self.pending_plan = None;
+        self.plan_flow = PlanFlow::None;
+        self.input.clear();
+        self.cursor = 0;
+        self.push_system(self.lang.choose("⏹ План отменён.", "⏹ Plan cancelled."));
+    }
+
+    /// Решение на гейте: Enter с пустым инпутом — выполнить, с текстом — доработать.
+    pub(crate) fn submit_plan_gate(&mut self) {
+        match plan_gate_action(&self.input) {
+            PlanGateAction::Approve => {
+                self.input.clear();
+                self.cursor = 0;
+                self.approve_plan();
+            }
+            PlanGateAction::Refine(feedback) => {
+                self.input.clear();
+                self.cursor = 0;
+                self.refine_plan(feedback);
+            }
+        }
+    }
+
+    /// Активен ли гейт одобрения (план готов и ничего не выполняется).
+    pub(crate) fn plan_gate_active(&self) -> bool {
+        self.pending_plan.is_some() && !self.running
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

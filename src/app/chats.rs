@@ -28,6 +28,8 @@ impl App {
         self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
         self.transcript.clear();
         self.last_run = None;
+        self.pending_plan = None;
+        self.plan_flow = PlanFlow::None;
         self.status = self.lang.choose("новый чат", "new chat").to_string();
 
         if let Err(err) = save_chat_transcript(&self.chat_path, &self.chat_id, &self.transcript) {
@@ -69,6 +71,8 @@ impl App {
                 self.chat_path = path;
                 self.transcript = lines;
                 self.last_run = find_last_run(&self.transcript);
+                self.pending_plan = None;
+                self.plan_flow = PlanFlow::None;
                 self.status = self.lang.choose("чат открыт", "chat resumed").to_string();
                 self.save_current_config(true);
                 self.push_command_result(format!(
