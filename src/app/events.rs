@@ -27,11 +27,13 @@ pub(crate) struct RevealLine {
 impl App {
     /// Идёт ли сейчас какая-либо анимация (typewriter, loader, переходы футера, shimmer effort).
     pub(crate) fn is_animating(&self) -> bool {
+        // Намеренно НЕ включаем footer_right_changed_at: правый сегмент футера
+        // ротируется каждые 8с и в простое будил 60fps-перерисовку всего экрана.
+        // Его переход доживёт на 100мс-тике (чуть грубее), зато простой реально спит.
         self.running
             || self.reveal_active.is_some()
             || !self.reveal_queue.is_empty()
             || self.footer_notice.is_some()
-            || self.footer_right_changed_at.is_some()
             || self.overlay == Overlay::Effort
     }
 
