@@ -29,11 +29,10 @@ impl App {
     }
 
     pub(crate) fn open_settings(&mut self) {
-        self.open_settings_from("/settings");
+        self.open_settings_from();
     }
 
-    pub(crate) fn open_settings_from(&mut self, command: &str) {
-        self.push_command_invocation(command);
+    pub(crate) fn open_settings_from(&mut self) {
         self.settings_original = Some(self.settings_snapshot());
         self.settings_focus = 0;
         self.overlay = Overlay::Settings;
@@ -87,7 +86,7 @@ impl App {
     pub(crate) fn set_direct_provider(&mut self, provider: Provider) {
         self.direct_provider = provider;
         self.save_current_config(true);
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}.",
             self.lang
                 .choose("Модель для простых сообщений:", "Direct chat model set to:"),
@@ -98,7 +97,7 @@ impl App {
     pub(crate) fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
         self.save_current_config(true);
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}.",
             self.lang.choose("Цветовая гамма:", "Theme set to:"),
             theme.title()
@@ -108,7 +107,7 @@ impl App {
     pub(crate) fn set_roles(&mut self, architect: Provider, reviewer: Provider) {
         self.set_mode(Mode::from_roles(architect, reviewer));
         self.save_current_config(true);
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {} → {}.",
             self.lang.choose("Роли планирования:", "Planning roles:"),
             architect.title(),

@@ -42,7 +42,7 @@ impl App {
         }
 
         self.save_current_config(true);
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}",
             self.lang.choose("Новый чат:", "New chat:"),
             self.chat_id
@@ -52,7 +52,7 @@ impl App {
     pub(crate) fn resume_chat(&mut self, chat_id: &str) {
         let chat_id = sanitize_chat_id(chat_id);
         if chat_id.is_empty() {
-            self.push_system(self.lang.choose(
+            self.push_command_result(self.lang.choose(
                 "Использование: /resume <id-чата>",
                 "Usage: /resume <chat-id>",
             ));
@@ -60,7 +60,7 @@ impl App {
         }
 
         let Some(path) = existing_chat_path(&self.chats_dir, &chat_id) else {
-            self.push_system(self.lang.choose("Чат не найден.", "Chat not found."));
+            self.push_command_result(self.lang.choose("Чат не найден.", "Chat not found."));
             return;
         };
         match load_chat_transcript(&path) {
@@ -71,17 +71,17 @@ impl App {
                 self.last_run = find_last_run(&self.transcript);
                 self.status = self.lang.choose("чат открыт", "chat resumed").to_string();
                 self.save_current_config(true);
-                self.push_system(format!(
+                self.push_command_result(format!(
                     "{} {}",
                     self.lang.choose("Чат открыт:", "Chat resumed:"),
                     self.chat_id
                 ));
             }
-            Ok(_) => self.push_system(
+            Ok(_) => self.push_command_result(
                 self.lang
                     .choose("Чат пустой или повреждён.", "Chat is empty or corrupted."),
             ),
-            Err(err) => self.push_system(format!(
+            Err(err) => self.push_command_result(format!(
                 "{} {}",
                 self.lang
                     .choose("Не удалось открыть чат:", "Failed to open chat:"),
@@ -93,7 +93,7 @@ impl App {
     pub(crate) fn open_chats_picker(&mut self) {
         let chats = list_saved_chats(&self.chats_dir, 20);
         if chats.is_empty() {
-            self.push_system(
+            self.push_command_result(
                 self.lang
                     .choose("Сохранённых чатов пока нет.", "No saved chats yet."),
             );
@@ -121,7 +121,7 @@ impl App {
                 }
             }
         }
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}",
             self.lang
                 .choose("Удалено мелких чатов:", "Removed small chats:"),
@@ -142,7 +142,7 @@ impl App {
                 }
             }
         }
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}",
             self.lang.choose("Удалено чатов:", "Removed chats:"),
             removed
@@ -152,19 +152,19 @@ impl App {
     pub(crate) fn rename_current_chat(&mut self, title: &str) {
         let title = title.trim();
         if title.is_empty() {
-            self.push_system(
+            self.push_command_result(
                 self.lang
                     .choose("Использование: /name <заголовок>", "Usage: /name <title>"),
             );
             return;
         }
         match set_chat_title(&self.chat_path, &self.chat_id, title) {
-            Ok(()) => self.push_system(format!(
+            Ok(()) => self.push_command_result(format!(
                 "{} {}",
                 self.lang.choose("Чат назван:", "Chat named:"),
                 title
             )),
-            Err(err) => self.push_system(format!(
+            Err(err) => self.push_command_result(format!(
                 "{} {}",
                 self.lang
                     .choose("Не удалось переименовать:", "Failed to rename:"),

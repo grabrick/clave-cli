@@ -65,6 +65,29 @@ impl App {
         let command = parts.next().unwrap_or_default();
         let rest = parts.collect::<Vec<_>>().join(" ");
 
+        // Запускающие команды показывают запрос как «◆ …», остальные — эхо «❯ команда».
+        let suppress_echo = matches!(
+            command,
+            "/plan"
+                | "/clave"
+                | "/duel"
+                | "/advisor"
+                | "/btw"
+                | "/brainstorming"
+                | "/writing-plans"
+                | "/finishing-a-development-branch"
+                | "/subagent-driven-development"
+                | "/using-git-worktrees"
+                | "/autofix-pr"
+                | "/new"
+                | "/resume"
+                | "/quit"
+                | "/exit"
+        );
+        if !suppress_echo {
+            self.push_command_invocation(line);
+        }
+
         match command {
             "/help" => {
                 self.push_system(self.lang.choose("⏺ Команды", "⏺ Commands"));
@@ -82,13 +105,13 @@ impl App {
                     self.lang = Language::Ru;
                     self.status = "язык:ru".to_string();
                     self.save_current_config(true);
-                    self.push_system("Язык интерфейса изменён на русский.");
+                    self.push_command_result("Язык интерфейса изменён на русский.");
                 }
                 "en" | "eng" | "english" => {
                     self.lang = Language::En;
                     self.status = "lang:en".to_string();
                     self.save_current_config(true);
-                    self.push_system("Interface language changed to English.");
+                    self.push_command_result("Interface language changed to English.");
                 }
                 _ => self.push_system(
                     self.lang
@@ -187,17 +210,16 @@ impl App {
                 "Проанализируй текущую ветку как PR: найди вероятные проблемы, недостающие проверки и план исправлений.",
                 "Analyze the current branch as a PR: find likely issues, missing checks, and a fix plan.",
             ),
-            "/agents" => self.open_settings_from(line),
+            "/agents" => self.open_settings_from(),
             "/background" => {
-                self.push_command_invocation(line);
                 self.status = self.lang.choose("сессия сохранена", "session saved").to_string();
                 self.push_command_result(self.lang.choose(
                     "Чат уже сохраняется на диск. Используй /quit, чтобы закрыть UI.",
                     "This chat is already saved on disk. Use /quit to close the UI.",
                 ));
             }
-            "/branch" => self.branch_current_chat(line),
-            "/add-dir" => self.set_work_dir_command(line, &rest),
+            "/branch" => self.branch_current_chat(),
+            "/add-dir" => self.set_work_dir_command(&rest),
             "/color" => match Theme::from_str(rest.trim()) {
                 Some(theme) => self.set_theme(theme),
                 None => self.push_system(self.lang.choose(
@@ -220,7 +242,7 @@ impl App {
                     self.rounds = value;
                     self.status = format!("rounds:{value}");
                     self.save_current_config(true);
-                    self.push_system(format!(
+                    self.push_command_result(format!(
                         "{} {value}.",
                         self.lang.choose("Количество раундов:", "Rounds set to")
                     ));
@@ -243,7 +265,7 @@ impl App {
                         .choose("папка обновлена", "out updated")
                         .to_string();
                     self.save_current_config(true);
-                    self.push_system(format!(
+                    self.push_command_result(format!(
                         "{} {}.",
                         self.lang.choose("Папка артефактов:", "Output directory:"),
                         self.out_dir
@@ -256,14 +278,12 @@ impl App {
             "/export" => self.export_chat(),
             "/search" => self.open_search(),
             "/effort" => {
-                self.push_command_invocation(line);
                 self.effort_original = Some(self.effort_snapshot());
                 self.effort_focus = 0;
                 self.overlay = Overlay::Effort;
                 self.status = "effort".to_string();
             }
             "/logout" | "/auth" => {
-                self.push_command_invocation(line);
                 self.push_command_result(self.lang.choose("Auth screen", "Auth screen"));
                 self.open_auth_screen(
                     self.lang
@@ -300,7 +320,7 @@ impl App {
                     self.clear_all_chats();
                 } else {
                     self.transcript.clear();
-                    self.push_system(self.lang.choose("Лента очищена.", "Transcript cleared."));
+                    self.push_command_result(self.lang.choose("Лента очищена.", "Transcript cleared."));
                 }
             }
             "/quit" | "/exit" => self.should_quit = true,
@@ -315,7 +335,7 @@ impl App {
         self.set_mode(mode);
         self.status = format!("mode:{}", self.mode.as_str());
         self.save_current_config(true);
-        self.push_system(format!(
+        self.push_command_result(format!(
             "{} {}.",
             self.lang.choose("Режим изменён на", "Mode changed to"),
             self.mode.as_str()
@@ -576,8 +596,7 @@ impl App {
         self.start_chat_with_prompt(format!("/btw {}", rest.trim()), prompt);
     }
 
-    fn branch_current_chat(&mut self, line: &str) {
-        self.push_command_invocation(line);
+    fn branch_current_chat(&mut self) {
         let source_id = self.chat_id.clone();
         let transcript = self.transcript.clone();
         self.chat_id = new_chat_id();
@@ -609,8 +628,7 @@ impl App {
         }
     }
 
-    fn set_work_dir_command(&mut self, line: &str, rest: &str) {
-        self.push_command_invocation(line);
+    fn set_work_dir_command(&mut self, rest: &str) {
         let value = rest.trim();
         if value.is_empty() {
             self.push_command_result(self.lang.choose(
