@@ -108,6 +108,7 @@ impl App {
 
 impl App {
     pub(crate) fn push_system(&mut self, line: impl Into<String>) {
+        self.scroll_offset = 0;
         let line = line.into();
         if let Err(err) = append_chat_line(&self.chat_path, &line) {
             self.status = self.lang.choose("ошибка чата", "chat error").to_string();

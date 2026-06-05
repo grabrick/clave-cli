@@ -19,8 +19,11 @@ pub(crate) fn draw_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
         lines.extend(loader_lines(app, area.width));
     }
 
-    let start = lines.len().saturating_sub(visible);
-    let lines = lines[start..].to_vec();
+    let max_offset = lines.len().saturating_sub(visible);
+    let offset = app.scroll_offset.min(max_offset);
+    let start = max_offset - offset;
+    let end = (start + visible).min(lines.len());
+    let lines = lines[start..end].to_vec();
 
     let transcript = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(transcript, area);
@@ -246,8 +249,11 @@ pub(crate) fn centered_line(text: impl Into<String>, width: u16, style: Style) -
     ])
 }
 
-pub(crate) fn separator_line(width: u16) -> Line<'static> {
-    Line::styled("─".repeat(width as usize), Style::default().fg(ACCENT_DIM))
+pub(crate) fn separator_line(width: u16, theme: Theme) -> Line<'static> {
+    Line::styled(
+        "─".repeat(width as usize),
+        Style::default().fg(theme.accent_dim()),
+    )
 }
 
 #[cfg(test)]
@@ -290,5 +296,24 @@ mod tests {
         ));
         assert!(is_error_status_line("Failed to spawn codex"));
         assert!(is_error_status_line("⎿ Read-only file system"));
+    }
+
+    #[test]
+    fn separator_line_follows_active_theme() {
+        // Разделитель должен брать цвет из активной темы, а не из захардкоженной палитры.
+        for theme in [
+            Theme::Purple,
+            Theme::Cyan,
+            Theme::Rose,
+            Theme::Amber,
+            Theme::Mono,
+        ] {
+            assert_eq!(separator_line(12, theme).style.fg, Some(theme.accent_dim()));
+        }
+        // Регрессия на «вечно фиолетовый»: смена темы должна менять цвет разделителя.
+        assert_ne!(
+            separator_line(12, Theme::Cyan).style.fg,
+            separator_line(12, Theme::Purple).style.fg,
+        );
     }
 }

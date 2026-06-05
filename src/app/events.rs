@@ -153,6 +153,7 @@ impl App {
     }
 
     pub(crate) fn enqueue_reveal(&mut self, line: impl Into<String>) {
+        self.scroll_offset = 0;
         self.reveal_queue.push_back(line.into());
     }
 

@@ -179,11 +179,16 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
         KeyCode::Down => app.history_next(),
         KeyCode::Home => app.move_line_start(),
         KeyCode::End => app.move_line_end(),
+        KeyCode::PageUp => {
+            app.scroll_offset = (app.scroll_offset + 10).min(app.transcript.len());
+        }
+        KeyCode::PageDown => app.scroll_offset = app.scroll_offset.saturating_sub(10),
         KeyCode::Esc => {
             app.input.clear();
             app.cursor = 0;
             app.history_index = None;
             app.selected_suggestion = 0;
+            app.scroll_offset = 0;
         }
         KeyCode::Char('?') if app.input.is_empty() => app.overlay = Overlay::Shortcuts,
         KeyCode::Char(ch) if !ch.is_control() => app.insert_char(ch),
