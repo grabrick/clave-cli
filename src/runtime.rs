@@ -122,6 +122,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         Overlay::None => handle_input_key(app, key),
         Overlay::Effort => handle_effort_key(app, key),
         Overlay::Settings => handle_settings_key(app, key),
+        Overlay::Chats => handle_chats_key(app, key),
     }
 }
 
@@ -373,6 +374,31 @@ pub(crate) fn handle_effort_key(app: &mut App, key: KeyEvent) {
             app.status = app.lang.choose("готов", "ready").to_string();
             app.push_command_result("Cancelled");
         }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.handle_ctrl_c();
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn handle_chats_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => app.chats_index = app.chats_index.saturating_sub(1),
+        KeyCode::Down => {
+            let last = app.chats_picker.len().saturating_sub(1);
+            app.chats_index = (app.chats_index + 1).min(last);
+        }
+        KeyCode::Enter => {
+            let selected = app
+                .chats_picker
+                .get(app.chats_index)
+                .map(|chat| chat.id.clone());
+            app.overlay = Overlay::None;
+            if let Some(id) = selected {
+                app.resume_chat(&id);
+            }
+        }
+        KeyCode::Esc => app.overlay = Overlay::None,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.handle_ctrl_c();
         }

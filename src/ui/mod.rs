@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::*;
 
+pub(crate) mod chats;
 pub(crate) mod command_palette;
 pub(crate) mod effort;
 pub(crate) mod footer;
@@ -13,6 +14,7 @@ pub(crate) mod settings;
 pub(crate) mod transcript;
 pub(crate) mod welcome;
 
+pub(crate) use chats::*;
 pub(crate) use command_palette::*;
 pub(crate) use effort::*;
 pub(crate) use footer::*;
@@ -41,6 +43,10 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         }
         Overlay::Settings => {
             draw_settings_screen(frame, area, app);
+            return;
+        }
+        Overlay::Chats => {
+            draw_chats_screen(frame, area, app);
             return;
         }
         Overlay::None => {}

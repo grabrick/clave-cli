@@ -277,13 +277,10 @@ impl App {
                 self.status = self.lang.choose("настройка", "setup").to_string();
             }
             "/new" => self.start_new_chat(),
-            "/chats" => self.show_saved_chats(),
+            "/chats" => self.open_chats_picker(),
             "/resume" => {
                 if rest.trim().is_empty() {
-                    self.push_system(self.lang.choose(
-                        "Использование: /resume <id-чата>",
-                        "Usage: /resume <chat-id>",
-                    ));
+                    self.open_chats_picker();
                 } else {
                     self.resume_chat(rest.trim());
                 }

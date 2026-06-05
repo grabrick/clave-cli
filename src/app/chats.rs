@@ -87,8 +87,8 @@ impl App {
         }
     }
 
-    pub(crate) fn show_saved_chats(&mut self) {
-        let chats = list_saved_chats(&self.chats_dir, 12);
+    pub(crate) fn open_chats_picker(&mut self) {
+        let chats = list_saved_chats(&self.chats_dir, 20);
         if chats.is_empty() {
             self.push_system(
                 self.lang
@@ -96,15 +96,13 @@ impl App {
             );
             return;
         }
-
-        self.push_system(self.lang.choose("Сохранённые чаты:", "Saved chats:"));
-        for chat in chats {
-            let marker = if chat.id == self.chat_id { "●" } else { " " };
-            self.push_system(format!(
-                "{} {} · {} · {}",
-                marker, chat.id, chat.lines, chat.title
-            ));
-        }
+        self.chats_index = chats
+            .iter()
+            .position(|chat| chat.id == self.chat_id)
+            .unwrap_or(0);
+        self.chats_picker = chats;
+        self.overlay = Overlay::Chats;
+        self.status = self.lang.choose("чаты", "chats").to_string();
     }
 }
 
