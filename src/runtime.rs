@@ -49,6 +49,15 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     result
 }
 
+/// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).
+pub(crate) fn poll_timeout(animating: bool) -> Duration {
+    if animating {
+        Duration::from_millis(16)
+    } else {
+        Duration::from_millis(100)
+    }
+}
+
 pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> AnyResult<()> {
     let mut app = App::new();
 
@@ -64,7 +73,7 @@ pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> 
             return Ok(());
         }
 
-        if event::poll(Duration::from_millis(80))? {
+        if event::poll(poll_timeout(app.is_animating()))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
                 Event::Resize(_, _) => {}
@@ -465,5 +474,17 @@ pub(crate) fn handle_settings_key(app: &mut App, key: KeyEvent) {
             app.handle_ctrl_c();
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poll_timeout_is_shorter_during_animation() {
+        assert!(poll_timeout(true) < poll_timeout(false));
+        assert_eq!(poll_timeout(true), Duration::from_millis(16));
+        assert_eq!(poll_timeout(false), Duration::from_millis(100));
     }
 }

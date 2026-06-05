@@ -23,6 +23,16 @@ pub(crate) struct RevealLine {
 }
 
 impl App {
+    /// Идёт ли сейчас какая-либо анимация (typewriter, loader, переходы футера, shimmer effort).
+    pub(crate) fn is_animating(&self) -> bool {
+        self.running
+            || self.reveal_active.is_some()
+            || !self.reveal_queue.is_empty()
+            || self.footer_notice.is_some()
+            || self.footer_right_changed_at.is_some()
+            || self.overlay == Overlay::Effort
+    }
+
     pub(crate) fn push_run_activity(&mut self, activity: impl Into<String>) {
         let activity = activity.into();
         if activity.trim().is_empty() {
