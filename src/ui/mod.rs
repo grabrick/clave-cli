@@ -9,6 +9,7 @@ pub(crate) mod helpers;
 pub(crate) mod layout;
 pub(crate) mod loader;
 pub(crate) mod onboarding;
+pub(crate) mod plan_gate;
 pub(crate) mod prompt;
 pub(crate) mod search;
 pub(crate) mod settings;
@@ -24,6 +25,7 @@ pub(crate) use helpers::*;
 pub(crate) use layout::*;
 pub(crate) use loader::*;
 pub(crate) use onboarding::*;
+pub(crate) use plan_gate::*;
 pub(crate) use prompt::*;
 pub(crate) use search::*;
 pub(crate) use settings::*;
@@ -59,6 +61,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     let command_mode = normalized_command_query(&app.input).is_some();
     let shortcuts_mode = app.overlay == Overlay::Shortcuts;
     let search_mode = app.overlay == Overlay::Search;
+    let gate_mode = app.plan_gate_active() && !command_mode && !shortcuts_mode && !search_mode;
     let composer_height = composer_height(app, area.width).min(area.height.saturating_sub(2));
     let palette_height = if command_mode {
         command_palette_height(app, area.height, composer_height)
@@ -66,6 +69,8 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         shortcuts_panel_height()
     } else if search_mode {
         search_panel_height()
+    } else if gate_mode {
+        plan_gate_panel_height()
     } else {
         0
     };
@@ -75,7 +80,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     } else {
         1
     };
-    let palette_gap = if command_mode || shortcuts_mode || search_mode {
+    let palette_gap = if command_mode || shortcuts_mode || search_mode || gate_mode {
         1
     } else {
         0
@@ -112,6 +117,8 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
             draw_shortcuts_panel(frame, chunks[4], app);
         } else if search_mode {
             draw_search_panel(frame, chunks[4], app);
+        } else if gate_mode {
+            draw_plan_gate_panel(frame, chunks[4], app);
         }
         draw_footer(frame, chunks[5], app);
     }
