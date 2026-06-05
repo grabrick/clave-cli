@@ -73,7 +73,7 @@ impl App {
                 cancel_rx,
                 tx.clone(),
                 lang,
-                mode,
+                RunAccess::Chat(mode),
             );
 
             match command_result {

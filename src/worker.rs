@@ -88,12 +88,11 @@ pub(crate) fn recent_chat_context(transcript: &[String], max_lines: usize) -> St
 
 /// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
 /// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
-/// `mode.claude_tools()` — без MCP-серверов из глобального конфига пользователя
-/// (иначе `--tools ""` не отключает MCP, и в Discussion протекали бы внешние
-/// инструменты, а `needs-auth`-сервер мог бы зависнуть в headless `-p`).
+/// `access` — без MCP-серверов из глобального конфига пользователя (иначе
+/// `--tools ""` не отключает MCP, и `needs-auth`-сервер может зависнуть в `-p`).
 pub(crate) fn claude_chat_args<'a>(
     effort: &'a str,
-    mode: ChatMode,
+    access: RunAccess,
     prompt: &'a str,
 ) -> Vec<&'a str> {
     vec![
@@ -103,9 +102,9 @@ pub(crate) fn claude_chat_args<'a>(
         "--no-session-persistence",
         "--strict-mcp-config",
         "--tools",
-        mode.claude_tools(),
+        access.claude_tools(),
         "--permission-mode",
-        mode.claude_permission(),
+        access.claude_permission(),
         "--max-turns",
         "20",
         "--output-format",
@@ -124,7 +123,7 @@ pub(crate) fn run_chat_provider(
     cancel_rx: Receiver<()>,
     tx: Sender<WorkerEvent>,
     lang: Language,
-    mode: ChatMode,
+    access: RunAccess,
 ) -> io::Result<ChatRunResult> {
     let codex_out_file = env::temp_dir().join(format!(
         "clave-codex-{}-{}.txt",
@@ -139,7 +138,7 @@ pub(crate) fn run_chat_provider(
             .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
             .unwrap_or_else(|_| "claude".to_string());
         let mut command = Command::new(program);
-        command.args(claude_chat_args(effort, mode, prompt));
+        command.args(claude_chat_args(effort, access, prompt));
         command
     } else {
         let program = env::var("CLAVE_CODEX")
@@ -159,7 +158,7 @@ pub(crate) fn run_chat_provider(
             "--color",
             "never",
             "-s",
-            mode.codex_sandbox(),
+            access.codex_sandbox(),
             prompt,
         ]);
         command
@@ -663,36 +662,42 @@ mod tests {
 
     #[test]
     fn claude_chat_args_are_strict_and_mode_scoped() {
-        // --strict-mcp-config обязателен во всех режимах: иначе MCP-инструменты
-        // из глобального конфига протекают мимо --tools.
-        for mode in [ChatMode::Discussion, ChatMode::Plan, ChatMode::FullAccess] {
-            let args = claude_chat_args("high", mode, "hi");
+        // --strict-mcp-config обязателен везде: иначе MCP-инструменты из
+        // глобального конфига протекают мимо --tools.
+        for access in [
+            RunAccess::Chat(ChatMode::Discussion),
+            RunAccess::Chat(ChatMode::Plan),
+            RunAccess::PlanReadonly,
+            RunAccess::PlanExecute,
+        ] {
+            let args = claude_chat_args("high", access, "hi");
             assert!(
                 args.contains(&"--strict-mcp-config"),
-                "strict-mcp-config missing for {mode:?}"
+                "strict-mcp-config missing for {access:?}"
             );
         }
 
-        let discussion = claude_chat_args("high", ChatMode::Discussion, "hi");
+        let discussion = claude_chat_args("high", RunAccess::Chat(ChatMode::Discussion), "hi");
         let tools_idx = discussion
             .iter()
             .position(|a| *a == "--tools")
             .expect("--tools present");
-        assert_eq!(
-            discussion[tools_idx + 1],
-            "",
-            "Discussion must be tool-free"
-        );
+        assert_eq!(discussion[tools_idx + 1], "", "Discussion must be tool-free");
 
-        let full = claude_chat_args("high", ChatMode::FullAccess, "hi");
-        let full_tools = full
+        let readonly = claude_chat_args("high", RunAccess::PlanReadonly, "hi");
+        let ro_tools = readonly
             .iter()
             .position(|a| *a == "--tools")
             .expect("--tools present");
-        assert!(
-            full[full_tools + 1].contains("Bash"),
-            "Full Access must include Bash"
-        );
+        assert!(readonly[ro_tools + 1].contains("Read"));
+        assert!(!readonly[ro_tools + 1].contains("Bash"));
+
+        let execute = claude_chat_args("high", RunAccess::PlanExecute, "hi");
+        let ex_tools = execute
+            .iter()
+            .position(|a| *a == "--tools")
+            .expect("--tools present");
+        assert!(execute[ex_tools + 1].contains("Bash"));
     }
 
     #[test]
