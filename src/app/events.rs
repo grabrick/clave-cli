@@ -4,6 +4,7 @@ use super::*;
 pub(crate) enum WorkerEvent {
     Line(String),
     ChatLine(String),
+    Activity(String),
     Done(i32),
     ChatDone(&'static str, i32, Option<RunUsage>),
     Cancelled,
@@ -77,6 +78,7 @@ impl App {
                     }
                 }
                 WorkerEvent::ChatLine(line) => self.enqueue_reveal(line),
+                WorkerEvent::Activity(line) => self.push_run_activity(line),
                 WorkerEvent::Done(code) => {
                     self.running = false;
                     self.run_started_at = None;

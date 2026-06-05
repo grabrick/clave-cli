@@ -86,6 +86,8 @@ pub(crate) fn run_chat_provider(
     prompt: &str,
     work_dir: &Path,
     cancel_rx: Receiver<()>,
+    tx: Sender<WorkerEvent>,
+    lang: Language,
 ) -> io::Result<ChatRunResult> {
     let codex_out_file = env::temp_dir().join(format!(
         "clave-codex-{}-{}.txt",
@@ -143,7 +145,13 @@ pub(crate) fn run_chat_provider(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    let stdout_handle = child.stdout.take().map(spawn_capture_reader);
+    let stdout_handle = child.stdout.take().map(|out| {
+        if provider == "claude" {
+            spawn_capture_reader(out)
+        } else {
+            spawn_codex_activity_reader(out, tx.clone(), lang)
+        }
+    });
     let stderr_handle = child.stderr.take().map(spawn_capture_reader);
 
     loop {
@@ -287,6 +295,79 @@ pub(crate) fn parse_codex_usage(jsonl: &str) -> Option<RunUsage> {
         }
     }
     last
+}
+
+fn codex_command_start(value: &serde_json::Value) -> Option<String> {
+    if value.get("type")?.as_str()? != "item.started" {
+        return None;
+    }
+    let item = value.get("item")?;
+    if item.get("type")?.as_str()? != "command_execution" {
+        return None;
+    }
+    item.get("command")?.as_str().map(String::from)
+}
+
+fn codex_path_token(command: &str) -> Option<String> {
+    command
+        .split_whitespace()
+        .rev()
+        .map(|token| token.trim_matches(|c| c == '"' || c == '\''))
+        .find(|token| token.contains('/') || token.contains('.'))
+        .map(String::from)
+}
+
+/// Превратить shell-команду codex в короткую человекочитаемую активность для лоадера.
+pub(crate) fn summarize_codex_command(command: &str, lang: Language) -> String {
+    let inner = command
+        .split_once("-lc")
+        .map(|(_, rest)| rest.trim().trim_matches('"').trim().to_string())
+        .unwrap_or_else(|| command.to_string());
+    let first = inner.split_whitespace().next().unwrap_or("").to_lowercase();
+
+    if matches!(
+        first.as_str(),
+        "sed" | "cat" | "head" | "tail" | "less" | "bat" | "more"
+    ) {
+        return match codex_path_token(&inner) {
+            Some(file) => format!("{} {}", lang.choose("Читаю", "Reading"), file),
+            None => lang.choose("Читаю файл", "Reading file").to_string(),
+        };
+    }
+    if matches!(first.as_str(), "grep" | "rg" | "ag" | "ack") {
+        return lang.choose("Ищу по коду", "Searching code").to_string();
+    }
+    if matches!(first.as_str(), "ls" | "find" | "fd" | "tree") {
+        return lang
+            .choose("Просматриваю файлы", "Listing files")
+            .to_string();
+    }
+    format!("⚙ {}", truncate_chars(&inner, 60))
+}
+
+/// Потоково читает JSONL codex: эмитит активность (command_execution) в лоадер
+/// и возвращает весь stdout (для разбора usage в конце).
+pub(crate) fn spawn_codex_activity_reader(
+    reader: impl Read + Send + 'static,
+    tx: Sender<WorkerEvent>,
+    lang: Language,
+) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        let mut full = String::new();
+        for line in reader.lines().map_while(Result::ok) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(command) = codex_command_start(&value) {
+                    let _ = tx.send(WorkerEvent::Activity(summarize_codex_command(
+                        &command, lang,
+                    )));
+                }
+            }
+            full.push_str(&line);
+            full.push('\n');
+        }
+        full
+    })
 }
 
 pub(crate) fn spawn_capture_reader<R>(reader: R) -> thread::JoinHandle<String>
@@ -450,5 +531,19 @@ mod tests {
     fn codex_usage_none_when_absent() {
         let jsonl = "{\"type\":\"item\",\"text\":\"hi\"}\n";
         assert!(parse_codex_usage(jsonl).is_none());
+    }
+
+    #[test]
+    fn summarizes_codex_read_command() {
+        let cmd = "/bin/zsh -lc \"sed -n '1,240p' src/model/overlay.rs\"";
+        assert_eq!(
+            summarize_codex_command(cmd, Language::En),
+            "Reading src/model/overlay.rs"
+        );
+        let grep = "/bin/zsh -lc \"grep -rn Overlay src\"";
+        assert_eq!(
+            summarize_codex_command(grep, Language::En),
+            "Searching code"
+        );
     }
 }

@@ -64,8 +64,15 @@ impl App {
         );
         let tx = self.tx.clone();
         thread::spawn(move || {
-            let command_result =
-                run_chat_provider(provider, &effort, &prompt, &work_dir, cancel_rx);
+            let command_result = run_chat_provider(
+                provider,
+                &effort,
+                &prompt,
+                &work_dir,
+                cancel_rx,
+                tx.clone(),
+                lang,
+            );
 
             match command_result {
                 Ok(ChatRunResult::Completed(code, stdout, stderr, usage)) => {
