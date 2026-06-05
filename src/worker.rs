@@ -86,6 +86,86 @@ pub(crate) fn recent_chat_context(transcript: &[String], max_lines: usize) -> St
         .join("\n")
 }
 
+pub(crate) fn plan_prompt(task: &str, context: &str, lang: Language) -> String {
+    let language_hint = lang.choose(
+        "Отвечай на русском, если пользователь не просит другой язык.",
+        "Reply in English unless the user asks for another language.",
+    );
+    format!(
+        "You are {APP_NAME}, an AI assistant inside a terminal UI, in PLAN MODE.\n\
+         Study the working directory (read files, search) and produce a concrete, \
+         step-by-step implementation plan for the task. For each step name the files \
+         to touch and what changes it makes; list risks or open questions at the end.\n\
+         Do NOT modify any files and do NOT run shell commands — planning only.\n\
+         {language_hint}\n\n\
+         Recent chat context:\n{context}\n\n\
+         Task:\n{task}",
+        language_hint = language_hint,
+        context = if context.trim().is_empty() {
+            "(empty)"
+        } else {
+            context
+        },
+        task = task,
+    )
+}
+
+pub(crate) fn execute_prompt(task: &str, plan: &str, context: &str, lang: Language) -> String {
+    let language_hint = lang.choose(
+        "Отвечай на русском, если пользователь не просит другой язык.",
+        "Reply in English unless the user asks for another language.",
+    );
+    format!(
+        "You are {APP_NAME}, an AI assistant inside a terminal UI, executing an APPROVED plan.\n\
+         Implement the task fully: read, create and edit files and run commands in the \
+         working directory as needed. Follow the plan; if reality differs, adapt but stay \
+         within its intent. Keep your final answer concise and useful. {language_hint}\n\n\
+         Recent chat context:\n{context}\n\n\
+         Task:\n{task}\n\n\
+         Approved plan:\n{plan}",
+        language_hint = language_hint,
+        context = if context.trim().is_empty() {
+            "(empty)"
+        } else {
+            context
+        },
+        task = task,
+        plan = plan,
+    )
+}
+
+pub(crate) fn refine_prompt(
+    task: &str,
+    prev_plan: &str,
+    feedback: &str,
+    context: &str,
+    lang: Language,
+) -> String {
+    let language_hint = lang.choose(
+        "Отвечай на русском, если пользователь не просит другой язык.",
+        "Reply in English unless the user asks for another language.",
+    );
+    format!(
+        "You are {APP_NAME}, an AI assistant inside a terminal UI, in PLAN MODE.\n\
+         Revise the previous plan to address the user's feedback. Same rules: read-only — \
+         Do NOT modify files or run commands; numbered steps with files to touch and \
+         risks at the end. {language_hint}\n\n\
+         Recent chat context:\n{context}\n\n\
+         Task:\n{task}\n\n\
+         Previous plan:\n{prev_plan}\n\n\
+         User feedback to address:\n{feedback}",
+        language_hint = language_hint,
+        context = if context.trim().is_empty() {
+            "(empty)"
+        } else {
+            context
+        },
+        task = task,
+        prev_plan = prev_plan,
+        feedback = feedback,
+    )
+}
+
 /// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
 /// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
 /// `access` — без MCP-серверов из глобального конфига пользователя (иначе
@@ -698,6 +778,40 @@ mod tests {
             .position(|a| *a == "--tools")
             .expect("--tools present");
         assert!(execute[ex_tools + 1].contains("Bash"));
+    }
+
+    #[test]
+    fn plan_prompt_forbids_file_changes() {
+        let p = plan_prompt("add a feature", "", Language::En);
+        assert!(p.contains("Do NOT modify"));
+        assert!(p.contains("add a feature"));
+    }
+
+    #[test]
+    fn execute_prompt_embeds_full_plan() {
+        let p = execute_prompt(
+            "add a feature",
+            "1. first step\n2. second step",
+            "",
+            Language::En,
+        );
+        assert!(p.contains("Approved plan"));
+        assert!(p.contains("first step"));
+        assert!(p.contains("second step"));
+    }
+
+    #[test]
+    fn refine_prompt_carries_feedback_and_prev_plan() {
+        let p = refine_prompt(
+            "add a feature",
+            "1. old step",
+            "make it simpler",
+            "",
+            Language::En,
+        );
+        assert!(p.contains("old step"));
+        assert!(p.contains("make it simpler"));
+        assert!(p.contains("Do NOT modify"));
     }
 
     #[test]
