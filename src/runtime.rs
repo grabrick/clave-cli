@@ -123,6 +123,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         Overlay::Effort => handle_effort_key(app, key),
         Overlay::Settings => handle_settings_key(app, key),
         Overlay::Chats => handle_chats_key(app, key),
+        Overlay::Shortcuts => handle_shortcuts_key(app, key),
     }
 }
 
@@ -184,9 +185,18 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
             app.history_index = None;
             app.selected_suggestion = 0;
         }
+        KeyCode::Char('?') if app.input.is_empty() => app.overlay = Overlay::Shortcuts,
         KeyCode::Char(ch) if !ch.is_control() => app.insert_char(ch),
         _ => {}
     }
+}
+
+pub(crate) fn handle_shortcuts_key(app: &mut App, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+        app.handle_ctrl_c();
+        return;
+    }
+    app.overlay = Overlay::None;
 }
 
 pub(crate) fn handle_onboarding_key(app: &mut App, key: KeyEvent) {

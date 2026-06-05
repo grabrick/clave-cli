@@ -11,6 +11,7 @@ pub(crate) mod loader;
 pub(crate) mod onboarding;
 pub(crate) mod prompt;
 pub(crate) mod settings;
+pub(crate) mod shortcuts;
 pub(crate) mod transcript;
 pub(crate) mod welcome;
 
@@ -24,6 +25,7 @@ pub(crate) use loader::*;
 pub(crate) use onboarding::*;
 pub(crate) use prompt::*;
 pub(crate) use settings::*;
+pub(crate) use shortcuts::*;
 pub(crate) use transcript::*;
 pub(crate) use welcome::*;
 
@@ -49,13 +51,16 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
             draw_chats_screen(frame, area, app);
             return;
         }
-        Overlay::None => {}
+        Overlay::None | Overlay::Shortcuts => {}
     }
 
     let command_mode = normalized_command_query(&app.input).is_some();
+    let shortcuts_mode = app.overlay == Overlay::Shortcuts;
     let composer_height = composer_height(app, area.width).min(area.height.saturating_sub(2));
     let palette_height = if command_mode {
         command_palette_height(app, area.height, composer_height)
+    } else if shortcuts_mode {
+        shortcuts_panel_height()
     } else {
         0
     };
@@ -65,7 +70,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     } else {
         1
     };
-    let palette_gap = if command_mode { 1 } else { 0 };
+    let palette_gap = if command_mode || shortcuts_mode { 1 } else { 0 };
     let main_height = main_area_height(
         app,
         area,
@@ -94,6 +99,9 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     if command_mode {
         draw_command_screen(frame, chunks[4], app);
     } else {
+        if shortcuts_mode {
+            draw_shortcuts_panel(frame, chunks[4], app);
+        }
         draw_footer(frame, chunks[5], app);
     }
 }

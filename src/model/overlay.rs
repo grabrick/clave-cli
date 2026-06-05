@@ -5,6 +5,7 @@ pub(crate) enum Overlay {
     Effort,
     Settings,
     Chats,
+    Shortcuts,
 }
 
 impl Overlay {
