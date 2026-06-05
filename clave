@@ -38,14 +38,24 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
-if [[ -x "$RELEASE_BIN" ]]; then
-  cd "$SCRIPT_DIR"
-  exec "$RELEASE_BIN" "$@"
+# Prefer the most recently built binary, so a fresh dev rebuild (debug) wins
+# over a stale release artifact (and vice versa). Falls back to cargo run.
+BIN=""
+if [[ -x "$RELEASE_BIN" && -x "$DEBUG_BIN" ]]; then
+  if [[ "$DEBUG_BIN" -nt "$RELEASE_BIN" ]]; then
+    BIN="$DEBUG_BIN"
+  else
+    BIN="$RELEASE_BIN"
+  fi
+elif [[ -x "$RELEASE_BIN" ]]; then
+  BIN="$RELEASE_BIN"
+elif [[ -x "$DEBUG_BIN" ]]; then
+  BIN="$DEBUG_BIN"
 fi
 
-if [[ -x "$DEBUG_BIN" ]]; then
+if [[ -n "$BIN" ]]; then
   cd "$SCRIPT_DIR"
-  exec "$DEBUG_BIN" "$@"
+  exec "$BIN" "$@"
 fi
 
 if command -v cargo >/dev/null 2>&1; then
