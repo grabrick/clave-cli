@@ -11,31 +11,31 @@ pub(crate) struct CommandSpec {
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         usage: "/brainstorming",
-        insert: "/brainstorming",
+        insert: "/brainstorming ",
         description_en: "(superpowers) Explore options before creative work",
         description_ru: "(superpowers) Исследовать варианты перед творческой работой",
     },
     CommandSpec {
         usage: "/writing-plans",
-        insert: "/writing-plans",
+        insert: "/writing-plans ",
         description_en: "(superpowers) Turn a spec into a multi-step plan",
         description_ru: "(superpowers) Превратить спеку в пошаговый план",
     },
     CommandSpec {
         usage: "/finishing-a-development-branch",
-        insert: "/finishing-a-development-branch",
+        insert: "/finishing-a-development-branch ",
         description_en: "(superpowers) Decide how to complete and polish work",
         description_ru: "(superpowers) Довести ветку разработки до завершения",
     },
     CommandSpec {
         usage: "/subagent-driven-development",
-        insert: "/subagent-driven-development",
+        insert: "/subagent-driven-development ",
         description_en: "(superpowers) Split implementation across agents",
         description_ru: "(superpowers) Разделить реализацию между агентами",
     },
     CommandSpec {
         usage: "/using-git-worktrees",
-        insert: "/using-git-worktrees",
+        insert: "/using-git-worktrees ",
         description_en: "(superpowers) Use isolated workspaces for parallel work",
         description_ru: "(superpowers) Использовать worktree для параллельной работы",
     },
@@ -47,7 +47,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         usage: "/advisor",
-        insert: "/advisor",
+        insert: "/advisor ",
         description_en: "Consult a stronger model for guidance",
         description_ru: "Попросить сильную модель о совете",
     },
@@ -184,6 +184,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Использовать Claude как архитектора и Codex как ревьюера",
     },
     CommandSpec {
+        usage: "/mode codex-claude",
+        insert: "/mode codex-claude",
+        description_en: "Use Codex as architect and Claude as reviewer",
+        description_ru: "Использовать Codex как архитектора и Claude как ревьюера",
+    },
+    CommandSpec {
         usage: "/rounds <n>",
         insert: "/rounds ",
         description_en: "Set review loop limit",
@@ -281,7 +287,7 @@ fn normalize_command_rest(command: &str, rest: &str) -> String {
                 _ => rest.to_string(),
             }
         }
-        "/mode" | "/chat-model" | "/theme" | "/roles" => {
+        "/mode" | "/chat-model" | "/theme" | "/color" | "/roles" => {
             let normalized = normalize_ru_keyboard_layout(rest);
             normalized
         }
@@ -381,6 +387,10 @@ mod tests {
         assert_eq!(
             normalize_command_line_for_execution(".еруьу кщыу").as_deref(),
             Some("/theme rose")
+        );
+        assert_eq!(
+            normalize_command_line_for_execution(".сщдщк фьиук").as_deref(),
+            Some("/color amber")
         );
         assert_eq!(
             normalize_command_line_for_execution(".кщдуы сщвуч сдфгву").as_deref(),

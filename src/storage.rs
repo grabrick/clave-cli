@@ -176,6 +176,7 @@ pub(crate) fn load_config(path: &Path) -> AppConfig {
                     config.rounds = rounds.max(1);
                 }
             }
+            "work_dir" | "cwd" => config.work_dir = value.to_string(),
             "out_dir" => config.out_dir = value.to_string(),
             "effort" => {
                 if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
@@ -271,6 +272,7 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
             "theme=\"{}\"\n",
             "lang=\"{}\"\n",
             "rounds={}\n",
+            "work_dir=\"{}\"\n",
             "out_dir=\"{}\"\n",
             "effort=\"{}\"\n",
             "codex_effort=\"{}\"\n",
@@ -284,6 +286,7 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
         config.theme.as_str(),
         config.lang.as_str(),
         config.rounds,
+        config.work_dir,
         config.out_dir,
         effort_label(config.effort_index),
         effort_label(config.codex_effort_index),

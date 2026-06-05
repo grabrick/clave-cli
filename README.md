@@ -60,6 +60,12 @@ Current TUI shape:
 - `/theme purple|cyan|rose|amber|mono` changes the accent palette;
 - `/roles <executor> <reviewer>` chooses the planning/code executor and reviewer;
 - `/mode codex-only|claude-codex|codex-claude|claude-only` changes the orchestration pairing;
+- `/brainstorming`, `/writing-plans`, `/finishing-a-development-branch`,
+  `/subagent-driven-development`, `/using-git-worktrees`, and `/autofix-pr`
+  run planning presets through the selected orchestration pairing;
+- `/advisor <question>` and `/btw <question>` run direct side-channel chats;
+- `/add-dir <directory>` sets the active working directory for direct chat and planning runs;
+- `/branch` creates a new saved chat from the current transcript;
 - `/new` starts a new saved chat;
 - `/chats` lists saved chats;
 - `/resume <id>` opens a saved chat;
@@ -78,7 +84,8 @@ Current TUI shape:
 - `Ctrl+J` inserts a newline;
 - `Enter` submits;
 - `Esc` clears input;
-- `Ctrl+C` exits.
+- `Ctrl+C` stops a running request or asks for exit confirmation; pressing it again
+  within 2 seconds exits.
 
 Open the interactive Rust TUI:
 
@@ -95,8 +102,8 @@ On first launch the TUI asks for the default agent pairing:
 
 The setup screen checks `codex login status` and `claude auth status --text`.
 It can launch `codex login` and `claude auth login`, then saves startup defaults
-for language, review rounds, effort, output directory, mode, direct chat
-provider, and theme.
+for language, review rounds, effort, working directory, output directory, mode,
+direct chat provider, and theme.
 
 The local launcher can be symlinked or copied into a directory on your `PATH`
 as `duel`.

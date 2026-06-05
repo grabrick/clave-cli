@@ -29,7 +29,11 @@ impl App {
     }
 
     pub(crate) fn open_settings(&mut self) {
-        self.push_command_invocation("/settings");
+        self.open_settings_from("/settings");
+    }
+
+    pub(crate) fn open_settings_from(&mut self, command: &str) {
+        self.push_command_invocation(command);
         self.settings_original = Some(self.settings_snapshot());
         self.settings_focus = 0;
         self.settings_open = true;

@@ -143,6 +143,68 @@ impl App {
                     )),
                 }
             }
+            "/brainstorming" => self.run_planning_preset(
+                "Брейншторминг перед реализацией",
+                "Brainstorm before implementation",
+                &rest,
+                "Разбери текущий контекст, предложи варианты решения, риски, быстрые проверки и лучший следующий шаг.",
+                "Use the current context, propose solution options, risks, quick checks, and the best next step.",
+            ),
+            "/writing-plans" => self.run_planning_preset(
+                "План разработки",
+                "Development plan",
+                &rest,
+                "Собери из текущего контекста пошаговый план реализации с проверками и порядком изменений.",
+                "Turn the current context into a step-by-step implementation plan with checks and change order.",
+            ),
+            "/finishing-a-development-branch" => self.run_planning_preset(
+                "Завершение ветки разработки",
+                "Finish development branch",
+                &rest,
+                "Проверь, что нужно доделать перед завершением ветки: тесты, регрессии, документация, пуш.",
+                "Check what is needed before finishing the branch: tests, regressions, docs, and push readiness.",
+            ),
+            "/subagent-driven-development" => self.run_planning_preset(
+                "Разделение работы между агентами",
+                "Subagent-driven development",
+                &rest,
+                "Разбей текущую задачу на независимые рабочие потоки для нескольких ИИ-агентов.",
+                "Split the current task into independent workstreams for multiple AI agents.",
+            ),
+            "/using-git-worktrees" => self.run_planning_preset(
+                "План работы через git worktrees",
+                "Git worktree workflow plan",
+                &rest,
+                "Предложи безопасную схему работы через git worktrees для параллельной разработки.",
+                "Propose a safe git worktree workflow for parallel development.",
+            ),
+            "/advisor" => self.run_advisor_command(&rest),
+            "/btw" => self.run_btw_command(&rest),
+            "/autofix-pr" => self.run_planning_preset(
+                "Autofix PR",
+                "Autofix PR",
+                &rest,
+                "Проанализируй текущую ветку как PR: найди вероятные проблемы, недостающие проверки и план исправлений.",
+                "Analyze the current branch as a PR: find likely issues, missing checks, and a fix plan.",
+            ),
+            "/agents" => self.open_settings_from(line),
+            "/background" => {
+                self.push_command_invocation(line);
+                self.status = self.lang.choose("сессия сохранена", "session saved").to_string();
+                self.push_command_result(self.lang.choose(
+                    "Чат уже сохраняется на диск. Используй /quit, чтобы закрыть UI.",
+                    "This chat is already saved on disk. Use /quit to close the UI.",
+                ));
+            }
+            "/branch" => self.branch_current_chat(line),
+            "/add-dir" => self.set_work_dir_command(line, &rest),
+            "/color" => match Theme::from_str(rest.trim()) {
+                Some(theme) => self.set_theme(theme),
+                None => self.push_system(self.lang.choose(
+                    "Использование: /color purple|cyan|rose|amber|mono",
+                    "Usage: /color purple|cyan|rose|amber|mono",
+                )),
+            },
             "/plan" | "/duel" => {
                 if rest.trim().is_empty() {
                     self.push_system(
@@ -190,7 +252,7 @@ impl App {
             }
             "/status" => {
                 self.push_system(format!(
-                    "{}={} {}={} {}={} chat={} theme={} roles={}>{} {}={} {}={}",
+                    "{}={} {}={} {}={} chat={} theme={} roles={}>{} cwd={} {}={} {}={}",
                     self.lang.choose("режим", "mode"),
                     self.mode.as_str(),
                     self.lang.choose("язык", "lang"),
@@ -201,6 +263,7 @@ impl App {
                     self.theme.as_str(),
                     self.mode.architect_provider().as_str(),
                     self.mode.reviewer_provider().as_str(),
+                    self.resolved_work_dir().display(),
                     "effort",
                     self.effort_summary(),
                     "out",
@@ -265,5 +328,197 @@ impl App {
             self.mode.as_str()
         ));
         self.ensure_auth_ready_for_current_mode();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn command_has_handler(command: &str) -> bool {
+        matches!(
+            command,
+            "/brainstorming"
+                | "/writing-plans"
+                | "/finishing-a-development-branch"
+                | "/subagent-driven-development"
+                | "/using-git-worktrees"
+                | "/add-dir"
+                | "/advisor"
+                | "/agents"
+                | "/autofix-pr"
+                | "/background"
+                | "/branch"
+                | "/btw"
+                | "/plan"
+                | "/clear"
+                | "/new"
+                | "/chats"
+                | "/resume"
+                | "/color"
+                | "/effort"
+                | "/settings"
+                | "/chat-model"
+                | "/theme"
+                | "/roles"
+                | "/logout"
+                | "/help"
+                | "/lang"
+                | "/mode"
+                | "/rounds"
+                | "/out"
+                | "/status"
+                | "/setup"
+                | "/quit"
+        )
+    }
+
+    fn run_planning_preset(
+        &mut self,
+        title_ru: &'static str,
+        title_en: &'static str,
+        rest: &str,
+        fallback_ru: &'static str,
+        fallback_en: &'static str,
+    ) {
+        let focus = if rest.trim().is_empty() {
+            self.lang.choose(fallback_ru, fallback_en).to_string()
+        } else {
+            rest.trim().to_string()
+        };
+        let task = format!("{}:\n{}", self.lang.choose(title_ru, title_en), focus);
+        self.start_task(task);
+    }
+
+    fn run_advisor_command(&mut self, rest: &str) {
+        let prompt = if rest.trim().is_empty() {
+            self.lang
+                .choose(
+                    "Оцени текущий контекст как технический советник: что я упускаю, какой следующий шаг самый разумный, какие риски проверить?",
+                    "Review the current context as a technical advisor: what am I missing, what is the smartest next step, and which risks should be checked?",
+                )
+                .to_string()
+        } else {
+            format!(
+                "{}\n{}",
+                self.lang.choose(
+                    "Ответь как технический советник. Дай ясную рекомендацию без запуска planning-loop:",
+                    "Answer as a technical advisor. Give a clear recommendation without running the planning loop:",
+                ),
+                rest.trim()
+            )
+        };
+        let display = if rest.trim().is_empty() {
+            "/advisor".to_string()
+        } else {
+            format!("/advisor {}", rest.trim())
+        };
+        self.start_chat_with_prompt(display, prompt);
+    }
+
+    fn run_btw_command(&mut self, rest: &str) {
+        if rest.trim().is_empty() {
+            self.push_system(
+                self.lang
+                    .choose("Использование: /btw <вопрос>", "Usage: /btw <question>"),
+            );
+            return;
+        }
+
+        let prompt = format!(
+            "{}\n{}",
+            self.lang.choose(
+                "Ответь на быстрый побочный вопрос, не меняя план и не трогая файлы:",
+                "Answer this quick side question without changing the plan or touching files:",
+            ),
+            rest.trim()
+        );
+        self.start_chat_with_prompt(format!("/btw {}", rest.trim()), prompt);
+    }
+
+    fn branch_current_chat(&mut self, line: &str) {
+        self.push_command_invocation(line);
+        let source_id = self.chat_id.clone();
+        let transcript = self.transcript.clone();
+        self.chat_id = new_chat_id();
+        self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
+        self.transcript = transcript;
+        self.last_run = find_last_run(&self.transcript);
+
+        match save_chat_transcript(&self.chat_path, &self.chat_id, &self.transcript) {
+            Ok(()) => {
+                self.status = self
+                    .lang
+                    .choose("ветка создана", "branch created")
+                    .to_string();
+                self.save_current_config(true);
+                self.push_command_result(format!(
+                    "{} {} → {}",
+                    self.lang
+                        .choose("Создана ветка чата:", "Chat branch created:"),
+                    source_id,
+                    self.chat_id
+                ));
+            }
+            Err(err) => self.push_command_result(format!(
+                "{} {}",
+                self.lang
+                    .choose("Не удалось создать ветку:", "Failed to create branch:"),
+                err
+            )),
+        }
+    }
+
+    fn set_work_dir_command(&mut self, line: &str, rest: &str) {
+        self.push_command_invocation(line);
+        let value = rest.trim();
+        if value.is_empty() {
+            self.push_command_result(self.lang.choose(
+                "Использование: /add-dir <папка>",
+                "Usage: /add-dir <directory>",
+            ));
+            return;
+        }
+
+        let candidate = PathBuf::from(value);
+        let resolved = if candidate.is_absolute() {
+            candidate
+        } else {
+            env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(candidate)
+        };
+
+        if !resolved.is_dir() {
+            self.push_command_result(format!(
+                "{} {}",
+                self.lang
+                    .choose("Папка не найдена:", "Directory does not exist:"),
+                resolved.display()
+            ));
+            return;
+        }
+
+        self.work_dir = resolved.to_string_lossy().to_string();
+        self.status = self.lang.choose("cwd обновлён", "cwd updated").to_string();
+        self.save_current_config(true);
+        self.push_command_result(format!(
+            "{} {}",
+            self.lang
+                .choose("Рабочая директория:", "Working directory:"),
+            self.work_dir
+        ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_palette_command_has_a_handler() {
+        for command in COMMANDS {
+            assert!(
+                App::command_has_handler(command.command_token()),
+                "missing handler for {}",
+                command.command_token()
+            );
+        }
     }
 }

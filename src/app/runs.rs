@@ -1,7 +1,33 @@
 use super::*;
 
 impl App {
+    pub(crate) fn resolved_work_dir(&self) -> PathBuf {
+        let configured = self.work_dir.trim();
+        if configured.is_empty() {
+            return env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        }
+
+        let path = PathBuf::from(configured);
+        let resolved = if path.is_absolute() {
+            path
+        } else {
+            env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path)
+        };
+
+        if resolved.is_dir() {
+            resolved
+        } else {
+            env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        }
+    }
+
     pub(crate) fn start_chat(&mut self, message: String) {
+        self.start_chat_with_prompt(message.clone(), message);
+    }
+
+    pub(crate) fn start_chat_with_prompt(&mut self, display_message: String, message: String) {
         if self.running {
             self.push_system(
                 self.lang
@@ -21,9 +47,7 @@ impl App {
         let lang = self.lang;
         let prompt = chat_prompt(&message, &context, lang);
         let token_estimate = estimate_tokens(&prompt);
-        let work_dir = engine_path()
-            .map(|engine| engine_work_dir(&engine))
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let work_dir = self.resolved_work_dir();
         let (cancel_tx, cancel_rx) = mpsc::channel();
 
         self.running = true;
@@ -33,7 +57,7 @@ impl App {
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
-        self.push_system(format!("◆ {message}"));
+        self.push_system(format!("◆ {display_message}"));
         let tx = self.tx.clone();
         thread::spawn(move || {
             let command_result =
@@ -133,7 +157,7 @@ impl App {
             .provider_effort(architect_provider.as_str())
             .to_string();
         let reviewer_effort = self.provider_effort(reviewer_provider.as_str()).to_string();
-        let work_dir = engine_work_dir(&engine);
+        let work_dir = self.resolved_work_dir();
         let work_dir_arg = work_dir.to_string_lossy().to_string();
 
         thread::spawn(move || {
