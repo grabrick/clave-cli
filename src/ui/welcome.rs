@@ -14,7 +14,7 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .title(Line::from(vec![
             Span::styled(
-                " Duel Code ",
+                format!(" {APP_NAME} "),
                 Style::default()
                     .fg(app.theme.accent())
                     .add_modifier(Modifier::BOLD),
@@ -90,9 +90,9 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
         )),
         Line::from(app.lang.choose(
             "Для спеки используй /plan <задача>",
-            "Use /plan <task> for spec-duel planning",
+            "Use /plan <task> for Clave planning",
         )),
-        separator_line(right_width),
+        separator_line(right_width, app.theme),
         Line::from(Span::styled(
             app.lang.choose("Что нового", "What's new"),
             Style::default()
@@ -103,7 +103,7 @@ pub(crate) fn draw_welcome(frame: &mut Frame<'_>, area: Rect, app: &App) {
             "Обычный ввод отвечает напрямую моделью",
             "Plain input chats directly with the model",
         )),
-        separator_line(right_width),
+        separator_line(right_width, app.theme),
         Line::from(Span::styled(
             "Overview",
             Style::default()

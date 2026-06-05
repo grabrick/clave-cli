@@ -71,8 +71,7 @@ pub(crate) fn draw_settings_screen(frame: &mut Frame<'_>, area: Rect, app: &App)
         4,
         app.lang.choose("Раунды", "Rounds"),
         &app.rounds.to_string(),
-        app.lang
-            .choose("лимит раундов spec-duel", "spec-duel round limit"),
+        app.lang.choose("лимит раундов Clave", "Clave round limit"),
     );
     push_settings_row(
         &mut lines,
@@ -81,7 +80,7 @@ pub(crate) fn draw_settings_screen(frame: &mut Frame<'_>, area: Rect, app: &App)
         app.lang.choose("Язык", "Language"),
         app.lang.as_str(),
         app.lang
-            .choose("язык интерфейса Duel", "Duel interface language"),
+            .choose("язык интерфейса Clave", "Clave interface language"),
     );
 
     lines.push(Line::from(""));

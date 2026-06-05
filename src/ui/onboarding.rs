@@ -15,12 +15,14 @@ pub(crate) fn draw_onboarding(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .title(Line::from(vec![
             Span::styled(
-                " Duel Setup ",
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                format!(" {APP_NAME} Setup "),
+                Style::default()
+                    .fg(app.theme.accent())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled("first run ", Style::default().fg(MUTED)),
         ]))
-        .border_style(Style::default().fg(ACCENT));
+        .border_style(Style::default().fg(app.theme.accent()));
     frame.render_widget(block, chunks[0]);
 
     let inner = Rect {
@@ -59,15 +61,15 @@ pub(crate) fn onboarding_provider_lines(app: &App, onboarding: &Onboarding) -> V
         let style = if selected {
             Style::default()
                 .fg(Color::White)
-                .bg(ACCENT_BG)
+                .bg(app.theme.accent_bg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(ACCENT_SOFT)
+            Style::default().fg(app.theme.accent_soft())
         };
         lines.push(Line::from(vec![
             Span::styled(
                 if selected { "› " } else { "  " },
-                Style::default().fg(ACCENT),
+                Style::default().fg(app.theme.accent()),
             ),
             Span::styled(format!("{:<14}", mode.as_str()), style),
             Span::raw(" "),
@@ -108,6 +110,7 @@ pub(crate) fn onboarding_auth_lines(app: &App, onboarding: &Onboarding) -> Vec<L
             "codex login",
             "C",
             app.lang,
+            app.theme,
         ),
         auth_status_line(
             "Claude",
@@ -118,6 +121,7 @@ pub(crate) fn onboarding_auth_lines(app: &App, onboarding: &Onboarding) -> Vec<L
             "claude auth login",
             "L",
             app.lang,
+            app.theme,
         ),
         Line::from(""),
         Line::styled(
@@ -159,15 +163,15 @@ pub(crate) fn onboarding_settings_lines(app: &App, onboarding: &Onboarding) -> V
         let style = if selected {
             Style::default()
                 .fg(Color::White)
-                .bg(ACCENT_BG)
+                .bg(app.theme.accent_bg())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(ACCENT_SOFT)
+            Style::default().fg(app.theme.accent_soft())
         };
         lines.push(Line::from(vec![
             Span::styled(
                 if selected { "› " } else { "  " },
-                Style::default().fg(ACCENT),
+                Style::default().fg(app.theme.accent()),
             ),
             Span::styled(format!("{label:<18}"), style),
             Span::raw(" "),
@@ -184,14 +188,17 @@ pub(crate) fn onboarding_settings_lines(app: &App, onboarding: &Onboarding) -> V
         Span::styled(
             app.mode.as_str(),
             Style::default()
-                .fg(ACCENT_SOFT)
+                .fg(app.theme.accent_soft())
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             app.lang.choose(" · Артефакты ", " · Artifacts "),
             Style::default().fg(MUTED),
         ),
-        Span::styled(app.out_dir.clone(), Style::default().fg(ACCENT_SOFT)),
+        Span::styled(
+            app.out_dir.clone(),
+            Style::default().fg(app.theme.accent_soft()),
+        ),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::styled(
@@ -213,6 +220,7 @@ pub(crate) fn auth_status_line(
     command: &'static str,
     key: &'static str,
     lang: Language,
+    theme: Theme,
 ) -> Line<'static> {
     let need_label = if needed {
         lang.choose("нужен", "needed")
@@ -228,7 +236,7 @@ pub(crate) fn auth_status_line(
     };
     let status_style = if installed && authenticated {
         Style::default()
-            .fg(ACCENT_SOFT)
+            .fg(theme.accent_soft())
             .add_modifier(Modifier::BOLD)
     } else if installed {
         Style::default()
@@ -242,7 +250,9 @@ pub(crate) fn auth_status_line(
     Line::from(vec![
         Span::styled(
             format!("{name:<8}"),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(format!("{need_label:<12}"), Style::default().fg(MUTED)),
         Span::styled(status, status_style),

@@ -9,9 +9,11 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     lines.push(Line::styled(
         "› /effort",
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(app.theme.accent())
+            .add_modifier(Modifier::BOLD),
     ));
-    lines.push(separator_line(area.width));
+    lines.push(separator_line(area.width, app.theme));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         app.lang.choose("Усилие", "Effort"),
@@ -41,6 +43,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 focused: true,
                 tick,
                 lang: app.lang,
+                theme: app.theme,
             },
         ),
         Mode::ClaudeOnly => push_effort_scale_block(
@@ -56,6 +59,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 focused: true,
                 tick,
                 lang: app.lang,
+                theme: app.theme,
             },
         ),
         Mode::ClaudeCodex | Mode::CodexClaude => {
@@ -73,6 +77,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                         focused: app.effort_focus == 1,
                         tick: tick + 2,
                         lang: app.lang,
+                        theme: app.theme,
                     },
                 );
                 lines.push(Line::from(""));
@@ -89,6 +94,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                         focused: app.effort_focus == 2,
                         tick: tick + 4,
                         lang: app.lang,
+                        theme: app.theme,
                     },
                 );
             } else {
@@ -105,6 +111,7 @@ pub(crate) fn draw_effort_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
                         focused: app.effort_focus == 1,
                         tick: tick + 2,
                         lang: app.lang,
+                        theme: app.theme,
                     },
                 );
             }
@@ -158,6 +165,7 @@ pub(crate) struct EffortScaleBlock<'a> {
     focused: bool,
     tick: u64,
     lang: Language,
+    theme: Theme,
 }
 
 pub(crate) fn push_effort_axis(
@@ -209,7 +217,7 @@ pub(crate) fn push_linked_effort_mode_line(
     let title = app.lang.choose("Режим", "Mode");
     let prefix = if focused { "› " } else { "  " };
     let mut spans = vec![
-        Span::styled(prefix, Style::default().fg(ACCENT)),
+        Span::styled(prefix, Style::default().fg(app.theme.accent())),
         Span::styled(
             format!("{title:<10} "),
             Style::default().fg(Color::White).add_modifier(if focused {
@@ -246,7 +254,7 @@ pub(crate) fn push_effort_scale_block(lines: &mut Vec<Line<'static>>, block: Eff
     let selected_effort = effort_label(block.selected_index);
     let prefix = if block.focused { "› " } else { "  " };
     lines.push(Line::from(vec![
-        Span::styled(prefix, Style::default().fg(ACCENT)),
+        Span::styled(prefix, Style::default().fg(block.theme.accent())),
         Span::styled(
             format!("{:<8}", block.title),
             Style::default()
@@ -272,6 +280,7 @@ pub(crate) fn push_effort_scale_block(lines: &mut Vec<Line<'static>>, block: Eff
         block.scale_start,
         block.scale_width,
         &tick_positions,
+        block.theme,
     ));
 
     let mut label_items = Vec::new();
@@ -346,6 +355,7 @@ pub(crate) fn effort_scale_line(
     scale_start: usize,
     scale_width: usize,
     tick_positions: &[usize],
+    theme: Theme,
 ) -> Line<'static> {
     let width = width as usize;
     let mut cells = vec![' '; width];
@@ -362,7 +372,7 @@ pub(crate) fn effort_scale_line(
 
     Line::styled(
         cells.into_iter().collect::<String>(),
-        Style::default().fg(ACCENT_DIM),
+        Style::default().fg(theme.accent_dim()),
     )
 }
 
@@ -486,7 +496,7 @@ pub(crate) fn effort_style(effort: &str, selected: bool) -> Style {
         "low" => Color::Indexed(114),
         "medium" => Color::Indexed(117),
         "high" => Color::Indexed(220),
-        "xhigh" => ACCENT_SOFT,
+        "xhigh" => Color::Indexed(183),
         "max" => Color::Indexed(203),
         _ => MUTED,
     };
