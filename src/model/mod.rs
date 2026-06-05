@@ -5,6 +5,7 @@ pub(crate) mod constants;
 pub(crate) mod effort;
 pub(crate) mod language;
 pub(crate) mod mode;
+pub(crate) mod overlay;
 pub(crate) mod provider;
 pub(crate) mod theme;
 
@@ -13,6 +14,7 @@ pub(crate) use constants::*;
 pub(crate) use effort::*;
 pub(crate) use language::*;
 pub(crate) use mode::*;
+pub(crate) use overlay::*;
 pub(crate) use provider::*;
 pub(crate) use theme::*;
 
