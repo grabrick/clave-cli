@@ -166,8 +166,6 @@ pub(crate) fn refine_prompt(
     )
 }
 
-/// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
-/// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
 /// Последняя строка с `TANDEM:` определяет сигнал: CONSENSUS (и не CONTINUE) → true.
 /// Дефолт false (= CONTINUE) — безопаснее продолжить, чем ложно согласиться (P1).
 pub(crate) fn parse_tandem_signal(text: &str) -> bool {
@@ -302,6 +300,8 @@ pub(crate) fn tandem_confirm_prompt(task: &str, transcript: &str, lang: Language
     )
 }
 
+/// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
+/// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
 /// `access` — без MCP-серверов из глобального конфига пользователя (иначе
 /// `--tools ""` не отключает MCP, и `needs-auth`-сервер может зависнуть в `-p`).
 pub(crate) fn claude_chat_args<'a>(
@@ -730,7 +730,10 @@ pub(crate) fn run_tandem(
         );
         transcript.push(
             crit_role,
-            &format!("{} {round}", lang.choose("критика, раунд", "critique, round")),
+            &format!(
+                "{} {round}",
+                lang.choose("критика, раунд", "critique, round")
+            ),
             &step.text,
         );
 
@@ -791,7 +794,11 @@ pub(crate) fn run_tandem(
         &format!("{} · {}", lang.choose("исполнение", "execution"), exec_role),
         &step.text,
     );
-    transcript.push(exec_role, lang.choose("исполнение", "execution"), &step.text);
+    transcript.push(
+        exec_role,
+        lang.choose("исполнение", "execution"),
+        &step.text,
+    );
 
     // ФАЗА РЕВЬЮ
     let review = tandem_review_prompt(task, &transcript.render(), lang);
