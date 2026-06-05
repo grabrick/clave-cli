@@ -86,6 +86,35 @@ pub(crate) fn recent_chat_context(transcript: &[String], max_lines: usize) -> St
         .join("\n")
 }
 
+/// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
+/// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
+/// `mode.claude_tools()` — без MCP-серверов из глобального конфига пользователя
+/// (иначе `--tools ""` не отключает MCP, и в Discussion протекали бы внешние
+/// инструменты, а `needs-auth`-сервер мог бы зависнуть в headless `-p`).
+pub(crate) fn claude_chat_args<'a>(
+    effort: &'a str,
+    mode: ChatMode,
+    prompt: &'a str,
+) -> Vec<&'a str> {
+    vec![
+        "-p",
+        "--effort",
+        effort,
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--tools",
+        mode.claude_tools(),
+        "--permission-mode",
+        mode.claude_permission(),
+        "--max-turns",
+        "20",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        prompt,
+    ]
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_chat_provider(
     provider: &'static str,
@@ -110,22 +139,7 @@ pub(crate) fn run_chat_provider(
             .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
             .unwrap_or_else(|_| "claude".to_string());
         let mut command = Command::new(program);
-        command.args([
-            "-p",
-            "--effort",
-            effort,
-            "--no-session-persistence",
-            "--tools",
-            mode.claude_tools(),
-            "--permission-mode",
-            mode.claude_permission(),
-            "--max-turns",
-            "20",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            prompt,
-        ]);
+        command.args(claude_chat_args(effort, mode, prompt));
         command
     } else {
         let program = env::var("CLAVE_CODEX")
@@ -644,6 +658,40 @@ mod tests {
         assert_eq!(
             summarize_codex_command(grep, Language::En),
             "Searching code"
+        );
+    }
+
+    #[test]
+    fn claude_chat_args_are_strict_and_mode_scoped() {
+        // --strict-mcp-config обязателен во всех режимах: иначе MCP-инструменты
+        // из глобального конфига протекают мимо --tools.
+        for mode in [ChatMode::Discussion, ChatMode::Plan, ChatMode::FullAccess] {
+            let args = claude_chat_args("high", mode, "hi");
+            assert!(
+                args.contains(&"--strict-mcp-config"),
+                "strict-mcp-config missing for {mode:?}"
+            );
+        }
+
+        let discussion = claude_chat_args("high", ChatMode::Discussion, "hi");
+        let tools_idx = discussion
+            .iter()
+            .position(|a| *a == "--tools")
+            .expect("--tools present");
+        assert_eq!(
+            discussion[tools_idx + 1],
+            "",
+            "Discussion must be tool-free"
+        );
+
+        let full = claude_chat_args("high", ChatMode::FullAccess, "hi");
+        let full_tools = full
+            .iter()
+            .position(|a| *a == "--tools")
+            .expect("--tools present");
+        assert!(
+            full[full_tools + 1].contains("Bash"),
+            "Full Access must include Bash"
         );
     }
 
