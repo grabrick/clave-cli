@@ -231,9 +231,49 @@ pub(crate) fn existing_path(path: PathBuf) -> Option<PathBuf> {
     Some(path.canonicalize().unwrap_or(path))
 }
 
-pub(crate) fn engine_work_dir(engine: &Path) -> PathBuf {
-    engine
-        .parent()
-        .map(Path::to_path_buf)
+pub(crate) fn launch_work_dir() -> PathBuf {
+    env::var("DUEL_LAUNCH_CWD")
+        .ok()
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .and_then(existing_path)
         .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
+pub(crate) fn resolve_work_dir(configured: &str, base_dir: &Path) -> PathBuf {
+    let configured = configured.trim();
+    if configured.is_empty() || configured == "." {
+        return base_dir.to_path_buf();
+    }
+
+    let path = PathBuf::from(configured);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        base_dir.join(path)
+    };
+
+    if resolved.is_dir() {
+        resolved.canonicalize().unwrap_or(resolved)
+    } else {
+        base_dir.to_path_buf()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_dot_to_launch_directory() {
+        let base = env::current_dir().expect("test cwd exists");
+        assert_eq!(resolve_work_dir(".", &base), base);
+    }
+
+    #[test]
+    fn resolves_relative_directory_from_launch_directory() {
+        let base = env::current_dir().expect("test cwd exists");
+        let expected = base.join("src").canonicalize().expect("src dir exists");
+        assert_eq!(resolve_work_dir("src", &base), expected);
+    }
 }

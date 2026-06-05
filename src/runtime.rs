@@ -24,7 +24,7 @@ pub(crate) fn print_usage() {
 
 pub(crate) fn run_engine_direct(args: Vec<String>) -> AnyResult<()> {
     let engine = engine_path().ok_or("spec-duel engine not found")?;
-    let work_dir = engine_work_dir(&engine);
+    let work_dir = launch_work_dir();
     let status = Command::new(&engine)
         .current_dir(work_dir)
         .args(args)

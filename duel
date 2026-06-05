@@ -11,11 +11,13 @@ while [[ -L "$SOURCE" ]]; do
 done
 
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+LAUNCH_CWD="$(pwd -P)"
 RELEASE_BIN="$SCRIPT_DIR/target/release/ai-orchestrator"
 DEBUG_BIN="$SCRIPT_DIR/target/debug/ai-orchestrator"
 ENGINE="$SCRIPT_DIR/spec-duel"
 
 export DUEL_ENGINE="${DUEL_ENGINE:-$ENGINE}"
+export DUEL_LAUNCH_CWD="${DUEL_LAUNCH_CWD:-$LAUNCH_CWD}"
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   printf '%s\n' 'duel'

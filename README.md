@@ -64,7 +64,10 @@ Current TUI shape:
   `/subagent-driven-development`, `/using-git-worktrees`, and `/autofix-pr`
   run planning presets through the selected orchestration pairing;
 - `/advisor <question>` and `/btw <question>` run direct side-channel chats;
-- `/add-dir <directory>` sets the active working directory for direct chat and planning runs;
+- `/add-dir <directory>` sets the active working directory for direct chat and
+  planning runs; relative paths are resolved from the directory where `duel`
+  was launched;
+- `.ai-runs` artifacts are written to the launch working directory by default, not to the orchestrator install directory;
 - `/branch` creates a new saved chat from the current transcript;
 - `/new` starts a new saved chat;
 - `/chats` lists saved chats;
@@ -107,6 +110,10 @@ direct chat provider, and theme.
 
 The local launcher can be symlinked or copied into a directory on your `PATH`
 as `duel`.
+
+The launcher preserves the directory where `duel` was invoked as
+`DUEL_LAUNCH_CWD`. Relative `work_dir` and `out_dir` values are resolved from
+that launch directory, so project artifacts stay in the project you opened.
 
 The launcher prefers the compiled Rust binary:
 

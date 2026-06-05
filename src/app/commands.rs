@@ -505,12 +505,11 @@ impl App {
         }
 
         let candidate = PathBuf::from(value);
+        let base_dir = launch_work_dir();
         let resolved = if candidate.is_absolute() {
             candidate
         } else {
-            env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(candidate)
+            base_dir.join(candidate)
         };
 
         if !resolved.is_dir() {

@@ -2,25 +2,7 @@ use super::*;
 
 impl App {
     pub(crate) fn resolved_work_dir(&self) -> PathBuf {
-        let configured = self.work_dir.trim();
-        if configured.is_empty() {
-            return env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        }
-
-        let path = PathBuf::from(configured);
-        let resolved = if path.is_absolute() {
-            path
-        } else {
-            env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path)
-        };
-
-        if resolved.is_dir() {
-            resolved
-        } else {
-            env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        }
+        resolve_work_dir(&self.work_dir, &launch_work_dir())
     }
 
     pub(crate) fn start_chat(&mut self, message: String) {
