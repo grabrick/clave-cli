@@ -1,31 +1,42 @@
 use super::*;
 
-pub(crate) fn draw_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    frame.render_widget(Clear, area);
-    let visible = area.height.saturating_sub(1) as usize;
+/// Собирает тело транскрипта (разделитель + строки + лоадер) в `Line` ОДИН раз.
+/// Результат используется и для высоты, и для отрисовки — раньше это строилось дважды.
+pub(crate) fn transcript_body_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     let mut lines = vec![Line::styled(
-        "─".repeat(area.width as usize),
+        "─".repeat(width as usize),
         Style::default().fg(app.theme.accent_dim()),
     )];
     lines.extend(transcript_lines(
         &app.transcript,
         app.lang,
-        area.width,
+        width,
         app.theme,
     ));
 
     if app.running {
         lines.push(Line::from(""));
-        lines.extend(loader_lines(app, area.width));
+        lines.extend(loader_lines(app, width));
     }
 
+    lines
+}
+
+pub(crate) fn draw_transcript(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    lines: &[Line<'static>],
+) {
+    frame.render_widget(Clear, area);
+    let visible = area.height.saturating_sub(1) as usize;
     let max_offset = lines.len().saturating_sub(visible);
     let offset = app.scroll_offset.min(max_offset);
     let start = max_offset - offset;
     let end = (start + visible).min(lines.len());
-    let lines = lines[start..end].to_vec();
+    let slice = lines[start..end].to_vec();
 
-    let transcript = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let transcript = Paragraph::new(slice).wrap(Wrap { trim: false });
     frame.render_widget(transcript, area);
 }
 

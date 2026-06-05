@@ -179,7 +179,10 @@ mod tests {
         // Характеризующий тест: оптимизация (O(n)) обязана давать тот же результат.
         assert_eq!(wrap_terminal_text_preserving_spaces("", 5), vec![""]);
         assert_eq!(wrap_terminal_text_preserving_spaces("abc", 5), vec!["abc"]);
-        assert_eq!(wrap_terminal_text_preserving_spaces("abcde", 5), vec!["abcde"]);
+        assert_eq!(
+            wrap_terminal_text_preserving_spaces("abcde", 5),
+            vec!["abcde"]
+        );
         assert_eq!(
             wrap_terminal_text_preserving_spaces("abcdef", 5),
             vec!["abcde", "f"]

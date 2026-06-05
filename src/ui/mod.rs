@@ -58,6 +58,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         Overlay::None | Overlay::Shortcuts | Overlay::Search => {}
     }
 
+    let is_welcome = app.transcript.is_empty() && !app.running && app.last_run.is_none();
     let command_mode = normalized_command_query(&app.input).is_some();
     let shortcuts_mode = app.overlay == Overlay::Shortcuts;
     let search_mode = app.overlay == Overlay::Search;
@@ -75,19 +76,28 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         0
     };
     let footer_height = if command_mode { 0 } else { 1 };
-    let output_gap = if app.transcript.is_empty() && !app.running && app.last_run.is_none() {
-        0
-    } else {
-        1
-    };
+    let output_gap = if is_welcome { 0 } else { 1 };
     let palette_gap = if command_mode || shortcuts_mode || search_mode || gate_mode {
         1
     } else {
         0
     };
+
+    // Транскрипт собираем в Line ОДИН раз за кадр — и для высоты, и для отрисовки
+    // (раньше transcript_lines строился дважды: в main_area_height и в draw_transcript).
+    let body_lines = if is_welcome {
+        Vec::new()
+    } else {
+        transcript_body_lines(app, area.width)
+    };
+    let content_height = if is_welcome {
+        area.height.min(12).max(1)
+    } else {
+        (body_lines.len() as u16).max(1)
+    };
     let main_height = main_area_height(
-        app,
         area,
+        content_height,
         composer_height,
         palette_height,
         footer_height,
@@ -108,7 +118,11 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         ])
         .split(area);
 
-    draw_main_area(frame, chunks[0], app);
+    if is_welcome {
+        draw_welcome(frame, chunks[0], app);
+    } else {
+        draw_transcript(frame, chunks[0], app, &body_lines);
+    }
     draw_prompt_bar(frame, chunks[2], app);
     if command_mode {
         draw_command_screen(frame, chunks[4], app);
@@ -121,13 +135,5 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
             draw_plan_gate_panel(frame, chunks[4], app);
         }
         draw_footer(frame, chunks[5], app);
-    }
-}
-
-pub(crate) fn draw_main_area(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    if app.transcript.is_empty() && !app.running && app.last_run.is_none() {
-        draw_welcome(frame, area, app);
-    } else {
-        draw_transcript(frame, area, app);
     }
 }
