@@ -106,6 +106,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Показать сохранённые чаты",
     },
     CommandSpec {
+        usage: "/chats clear",
+        insert: "/chats clear",
+        description_en: "Delete tiny saved chats",
+        description_ru: "Удалить мелкие сохранённые чаты",
+    },
+    CommandSpec {
         usage: "/resume <id>",
         insert: "/resume ",
         description_en: "Resume a saved chat",

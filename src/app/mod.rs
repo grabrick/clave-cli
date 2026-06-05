@@ -105,9 +105,9 @@ impl App {
         };
 
         let (chat_id, chat_path, transcript) =
-            restore_or_create_chat(&chats_dir, None, config.lang);
+            restore_or_create_chat(&chats_dir, config.last_chat_id.as_deref(), config.lang);
         let history = load_history(&history_path).unwrap_or_default();
-        let last_run = None;
+        let last_run = find_last_run(&transcript);
 
         Self {
             mode: config.mode,

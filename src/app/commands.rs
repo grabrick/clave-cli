@@ -280,7 +280,13 @@ impl App {
                 self.status = self.lang.choose("настройка", "setup").to_string();
             }
             "/new" => self.start_new_chat(),
-            "/chats" => self.open_chats_picker(),
+            "/chats" => {
+                if rest.trim() == "clear" {
+                    self.clear_small_chats();
+                } else {
+                    self.open_chats_picker();
+                }
+            }
             "/resume" => {
                 if rest.trim().is_empty() {
                     self.open_chats_picker();

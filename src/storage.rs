@@ -400,9 +400,21 @@ pub(crate) struct ChatSummary {
 
 pub(crate) fn restore_or_create_chat(
     chats_dir: &Path,
-    _last_chat_id: Option<&str>,
+    last_chat_id: Option<&str>,
     lang: Language,
 ) -> (String, PathBuf, Vec<String>) {
+    if let Some(id) = last_chat_id {
+        let id = sanitize_chat_id(id);
+        if !id.is_empty() {
+            let path = chat_path_for_id(chats_dir, &id);
+            if let Ok(lines) = load_chat_transcript(&path) {
+                if !lines.is_empty() {
+                    return (id, path, lines);
+                }
+            }
+        }
+    }
+
     let chat_id = new_chat_id();
     let path = chat_path_for_id(chats_dir, &chat_id);
     let transcript = initial_transcript(lang);
@@ -574,4 +586,33 @@ pub(crate) fn unix_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_uses_existing_chat_then_falls_back() {
+        let dir = env::temp_dir().join(format!("clave-restore-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+
+        let id = "chat-restore-001";
+        let path = chat_path_for_id(&dir, id);
+        save_chat_transcript(&path, id, &["⏺ привет".to_string(), "ответ".to_string()])
+            .expect("save chat");
+
+        // last_chat_id с существующим непустым чатом → восстанавливаем его
+        let (rid, _, lines) = restore_or_create_chat(&dir, Some(id), Language::Ru);
+        assert_eq!(rid, id);
+        assert_eq!(lines, vec!["⏺ привет".to_string(), "ответ".to_string()]);
+
+        // None → создаём новый пустой
+        let (nid, _, nlines) = restore_or_create_chat(&dir, None, Language::Ru);
+        assert_ne!(nid, id);
+        assert!(nlines.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

@@ -104,6 +104,26 @@ impl App {
         self.overlay = Overlay::Chats;
         self.status = self.lang.choose("чаты", "chats").to_string();
     }
+
+    pub(crate) fn clear_small_chats(&mut self) {
+        let chats = list_saved_chats(&self.chats_dir, usize::MAX);
+        let mut removed = 0;
+        for chat in chats {
+            if chat.id == self.chat_id || chat.lines >= 3 {
+                continue;
+            }
+            let path = chat_path_for_id(&self.chats_dir, &chat.id);
+            if fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        self.push_system(format!(
+            "{} {}",
+            self.lang
+                .choose("Удалено мелких чатов:", "Removed small chats:"),
+            removed
+        ));
+    }
 }
 
 impl App {
