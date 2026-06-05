@@ -168,6 +168,140 @@ pub(crate) fn refine_prompt(
 
 /// Аргументы запуска `claude` для прямого чата. Вынесено отдельно ради теста:
 /// `--strict-mcp-config` гарантирует, что доступны РОВНО инструменты из
+/// Последняя строка с `TANDEM:` определяет сигнал: CONSENSUS (и не CONTINUE) → true.
+/// Дефолт false (= CONTINUE) — безопаснее продолжить, чем ложно согласиться (P1).
+pub(crate) fn parse_tandem_signal(text: &str) -> bool {
+    for line in text.lines().rev() {
+        let up = line.to_uppercase();
+        if up.contains("TANDEM:") {
+            return up.contains("CONSENSUS") && !up.contains("CONTINUE");
+        }
+    }
+    false
+}
+
+fn tandem_lang_hint(lang: Language) -> &'static str {
+    lang.choose(
+        "Отвечай на русском, если пользователь не просит другой язык.",
+        "Reply in English unless the user asks for another language.",
+    )
+}
+
+pub(crate) fn tandem_propose_prompt(task: &str, transcript: &str, lang: Language) -> String {
+    format!(
+        "You are {APP_NAME}, the EXECUTOR working in a pair with a CRITIC. PLAN MODE.\n\
+         Study the working directory (read files, search). Propose a concrete approach to \
+         the task: which files, what changes, and why. Address the critic's prior objections \
+         if any. Do NOT modify files or run commands — this is discussion. {hint}\n\n\
+         Task:\n{task}\n\n\
+         Tandem transcript so far:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
+pub(crate) fn tandem_challenge_prompt(task: &str, transcript: &str, lang: Language) -> String {
+    format!(
+        "You are {APP_NAME}, the CRITIC working in a pair with an EXECUTOR. PLAN MODE.\n\
+         Study the code (read-only) and STRICTLY evaluate the executor's proposed approach: \
+         gaps, risks, what is missing, better alternatives. Do NOT agree out of politeness. \
+         End with EXACTLY one line: `TANDEM: CONSENSUS` only if the approach is genuinely \
+         correct and complete, otherwise `TANDEM: CONTINUE` followed by concrete objections. \
+         {hint}\n\n\
+         Task:\n{task}\n\n\
+         Tandem transcript so far:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
+pub(crate) fn tandem_execute_prompt(task: &str, transcript: &str, lang: Language) -> String {
+    format!(
+        "You are {APP_NAME}, the EXECUTOR. The approach below was agreed with the critic. \
+         Implement the task fully in the working directory: read, create and edit files and \
+         run commands as needed. If reality differs from the plan, adapt within its intent. \
+         Keep your final answer concise. {hint}\n\n\
+         Task:\n{task}\n\n\
+         Agreed approach / transcript:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
+pub(crate) fn tandem_review_prompt(task: &str, transcript: &str, lang: Language) -> String {
+    format!(
+        "You are {APP_NAME}, the CRITIC. The executor applied the approach. Inspect the REAL \
+         result (read the changed files). Does it match what was agreed, is it correct, any \
+         bugs or omissions? End with EXACTLY one line: `TANDEM: CONSENSUS` if the result is \
+         good, otherwise `TANDEM: CONTINUE` followed by what to fix. {hint}\n\n\
+         Task:\n{task}\n\n\
+         Tandem transcript so far:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
+pub(crate) fn tandem_fix_prompt(
+    task: &str,
+    transcript: &str,
+    review: &str,
+    lang: Language,
+) -> String {
+    format!(
+        "You are {APP_NAME}, the EXECUTOR. The critic raised issues with the result. Fix them \
+         in the working directory. Keep your final answer concise. {hint}\n\n\
+         Task:\n{task}\n\n\
+         Critic's review to address:\n{review}\n\n\
+         Tandem transcript so far:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        review = review,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
+pub(crate) fn tandem_confirm_prompt(task: &str, transcript: &str, lang: Language) -> String {
+    format!(
+        "You are {APP_NAME}, the CRITIC. The executor applied fixes. Briefly verify whether \
+         your issues are resolved (read the changed files). End with EXACTLY one line: \
+         `TANDEM: CONSENSUS` if resolved, otherwise `TANDEM: CONTINUE` with what remains. \
+         {hint}\n\n\
+         Task:\n{task}\n\n\
+         Tandem transcript so far:\n{transcript}",
+        hint = tandem_lang_hint(lang),
+        task = task,
+        transcript = if transcript.trim().is_empty() {
+            "(empty)"
+        } else {
+            transcript
+        },
+    )
+}
+
 /// `access` — без MCP-серверов из глобального конфига пользователя (иначе
 /// `--tools ""` не отключает MCP, и `needs-auth`-сервер может зависнуть в `-p`).
 pub(crate) fn claude_chat_args<'a>(
@@ -816,6 +950,32 @@ mod tests {
         assert!(p.contains("old step"));
         assert!(p.contains("make it simpler"));
         assert!(p.contains("Do NOT modify"));
+    }
+
+    #[test]
+    fn tandem_signal_parses_last_marker() {
+        assert!(parse_tandem_signal("bla bla\nTANDEM: CONSENSUS"));
+        assert!(!parse_tandem_signal("TANDEM: CONTINUE\nmore text"));
+        assert!(!parse_tandem_signal("no signal here"));
+        // последний маркер решает
+        assert!(!parse_tandem_signal(
+            "TANDEM: CONSENSUS\n...\nTANDEM: CONTINUE"
+        ));
+    }
+
+    #[test]
+    fn tandem_prompts_carry_role_and_signal_rules() {
+        let ch = tandem_challenge_prompt("do x", "", Language::En);
+        assert!(ch.contains("CRITIC"));
+        assert!(ch.contains("TANDEM: CONSENSUS"));
+        assert!(ch.contains("Do NOT agree out of politeness"));
+
+        let ex = tandem_execute_prompt("do x", "approach", Language::En);
+        assert!(ex.contains("EXECUTOR"));
+        assert!(ex.contains("edit files"));
+
+        let fix = tandem_fix_prompt("do x", "", "fix the bug", Language::En);
+        assert!(fix.contains("fix the bug"));
     }
 
     #[test]
