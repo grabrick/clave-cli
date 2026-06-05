@@ -87,7 +87,14 @@ impl App {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let command_result = run_chat_provider(
-                provider, &effort, &prompt, &work_dir, cancel_rx, tx.clone(), lang, access,
+                provider,
+                &effort,
+                &prompt,
+                &work_dir,
+                cancel_rx,
+                tx.clone(),
+                lang,
+                access,
             );
 
             match command_result {

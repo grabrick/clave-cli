@@ -57,7 +57,12 @@ impl App {
         let context = recent_chat_context(&self.transcript, 40);
         let prompt = refine_prompt(&pending.task, &pending.plan, &feedback, &context, self.lang);
         self.plan_flow = PlanFlow::Planning { task: pending.task };
-        self.run_provider_chat(format!("◆ {feedback}"), prompt, RunAccess::PlanReadonly, true);
+        self.run_provider_chat(
+            format!("◆ {feedback}"),
+            prompt,
+            RunAccess::PlanReadonly,
+            true,
+        );
         if self.running {
             self.status = self
                 .lang

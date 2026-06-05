@@ -762,7 +762,11 @@ mod tests {
             .iter()
             .position(|a| *a == "--tools")
             .expect("--tools present");
-        assert_eq!(discussion[tools_idx + 1], "", "Discussion must be tool-free");
+        assert_eq!(
+            discussion[tools_idx + 1],
+            "",
+            "Discussion must be tool-free"
+        );
 
         let readonly = claude_chat_args("high", RunAccess::PlanReadonly, "hi");
         let ro_tools = readonly
