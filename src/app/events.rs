@@ -23,10 +23,40 @@ pub(crate) struct RevealLine {
 }
 
 impl App {
+    pub(crate) fn push_run_activity(&mut self, activity: impl Into<String>) {
+        let activity = activity.into();
+        if activity.trim().is_empty() {
+            return;
+        }
+
+        self.run_activity.push_back(activity);
+        while self.run_activity.len() > 5 {
+            self.run_activity.pop_front();
+        }
+    }
+
+    pub(crate) fn record_worker_activity(&mut self, line: &str) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        if let Some(path) = trimmed.strip_prefix("Final brief: ") {
+            self.push_run_activity(format!(
+                "{} {}",
+                self.lang.choose("итог:", "final:"),
+                truncate_chars(path, 96)
+            ));
+        } else {
+            self.push_run_activity(truncate_chars(trimmed, 120));
+        }
+    }
+
     pub(crate) fn drain_worker_events(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
                 WorkerEvent::Line(line) => {
+                    self.record_worker_activity(&line);
                     if let Some(path) = line.strip_prefix("Final brief: ") {
                         let path = path.to_string();
                         self.last_run = Some(path.clone());

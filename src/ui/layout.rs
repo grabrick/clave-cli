@@ -31,7 +31,7 @@ pub(crate) fn transcript_content_height(app: &App, width: u16) -> u16 {
     let mut height = 1usize;
     height += transcript_lines(&app.transcript, app.lang, width, app.theme).len();
     if app.running {
-        height += 2;
+        height += 1 + loader_lines(app, width).len();
     }
     height.min(u16::MAX as usize) as u16
 }

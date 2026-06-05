@@ -54,10 +54,31 @@ impl App {
         self.run_started_at = Some(Instant::now());
         self.run_label = provider_name.to_string();
         self.run_token_estimate = Some(token_estimate);
+        self.run_activity.clear();
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
         self.push_system(format!("◆ {display_message}"));
+        self.push_run_activity(format!(
+            "{} {} CLI",
+            self.lang.choose("инструмент:", "tool:"),
+            provider_name
+        ));
+        self.push_run_activity(format!(
+            "{} {}",
+            self.lang.choose("cwd:", "cwd:"),
+            work_dir.display()
+        ));
+        self.push_run_activity(format!(
+            "{} {} · effort {}",
+            self.lang.choose("модель:", "model:"),
+            provider,
+            effort
+        ));
+        self.push_run_activity(
+            self.lang
+                .choose("ожидаю ответ модели...", "waiting for model output..."),
+        );
         let tx = self.tx.clone();
         thread::spawn(move || {
             let command_result =
@@ -133,6 +154,7 @@ impl App {
         self.run_started_at = Some(Instant::now());
         self.run_label = "spec-duel".to_string();
         self.run_token_estimate = Some(estimate_tokens(&task));
+        self.run_activity.clear();
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = self.lang.choose("запущено", "running").to_string();
@@ -159,6 +181,30 @@ impl App {
         let reviewer_effort = self.provider_effort(reviewer_provider.as_str()).to_string();
         let work_dir = self.resolved_work_dir();
         let work_dir_arg = work_dir.to_string_lossy().to_string();
+        self.push_run_activity(format!(
+            "{} spec-duel",
+            self.lang.choose("инструмент:", "tool:")
+        ));
+        self.push_run_activity(format!(
+            "{} {}",
+            self.lang.choose("cwd:", "cwd:"),
+            work_dir.display()
+        ));
+        self.push_run_activity(format!(
+            "{} {} · {} {}",
+            self.lang.choose("исполнитель:", "executor:"),
+            architect_provider.as_str(),
+            self.lang.choose("ревьюер:", "reviewer:"),
+            reviewer_provider.as_str()
+        ));
+        self.push_run_activity(format!(
+            "{} {} · {} {} · out {}",
+            self.lang.choose("effort:", "effort:"),
+            self.effort_summary(),
+            self.lang.choose("раунды:", "rounds:"),
+            self.rounds,
+            self.out_dir
+        ));
 
         thread::spawn(move || {
             let mut args = Vec::new();

@@ -16,7 +16,7 @@ pub(crate) fn draw_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     if app.running {
         lines.push(Line::from(""));
-        lines.push(loader_line(app));
+        lines.extend(loader_lines(app, area.width));
     }
 
     let start = lines.len().saturating_sub(visible);

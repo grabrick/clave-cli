@@ -29,12 +29,8 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
         token_detail
     );
 
-    let mut spans = shimmer_text_spans(
-        &format!("✳ {}… ", phrase),
-        "xhigh",
-        true,
-        current_effort_tick(),
-    );
+    let mut spans =
+        theme_shimmer_text_spans(&format!("✳ {}… ", phrase), app.theme, current_effort_tick());
     spans.push(Span::styled(
         detail,
         Style::default().fg(Color::Indexed(245)),
@@ -42,9 +38,77 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
+pub(crate) fn loader_lines(app: &App, width: u16) -> Vec<Line<'static>> {
+    let mut lines = vec![loader_line(app)];
+    lines.extend(loader_activity_lines(app, width));
+    lines
+}
+
+pub(crate) fn loader_activity_lines(app: &App, width: u16) -> Vec<Line<'static>> {
+    let content_width = width.saturating_sub(5).max(1);
+    let mut lines = Vec::new();
+
+    for activity in &app.run_activity {
+        let wrapped = wrap_terminal_line(activity, content_width);
+        for (index, line) in wrapped.into_iter().enumerate() {
+            let prefix = if index == 0 { "  ⎿ " } else { "    " };
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(app.theme.accent_dim())),
+                Span::styled(line, Style::default().fg(Color::Indexed(245))),
+            ]));
+        }
+    }
+
+    lines
+}
+
+pub(crate) fn theme_shimmer_text_spans(text: &str, theme: Theme, tick: u64) -> Vec<Span<'static>> {
+    text.chars()
+        .enumerate()
+        .map(|(index, ch)| {
+            Span::styled(
+                ch.to_string(),
+                Style::default()
+                    .fg(theme_shimmer_color(theme, index, tick))
+                    .add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn theme_shimmer_color(theme: Theme, index: usize, tick: u64) -> Color {
+    let palette = [
+        theme.accent_dim(),
+        theme.accent(),
+        theme.accent_soft(),
+        theme.accent(),
+        theme.accent_dim(),
+    ];
+    let phase = (tick as usize) % palette.len();
+    let color_index = (index + palette.len() - phase) % palette.len();
+    palette[color_index]
+}
+
 pub(crate) fn live_token_estimate(base: usize, elapsed: Duration, effort: &str) -> usize {
     let per_second = effort_weight(effort);
     base.saturating_add(elapsed.as_secs() as usize * per_second)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loader_shimmer_uses_current_theme_palette() {
+        assert_eq!(
+            theme_shimmer_color(Theme::Amber, 1, 0),
+            Theme::Amber.accent()
+        );
+        assert_ne!(
+            theme_shimmer_color(Theme::Amber, 1, 0),
+            Theme::Purple.accent()
+        );
+    }
 }
 
 pub(crate) fn effort_weight(effort: &str) -> usize {
