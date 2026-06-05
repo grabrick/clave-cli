@@ -7,7 +7,11 @@ impl App {
 
     pub(crate) fn start_chat(&mut self, message: String) {
         self.last_chat_message = Some(message.clone());
-        self.start_chat_with_prompt(message.clone(), message);
+        if self.chat_mode == ChatMode::Plan {
+            self.start_plan(message);
+        } else {
+            self.start_chat_with_prompt(message.clone(), message);
+        }
     }
 
     pub(crate) fn start_chat_with_prompt(&mut self, display_message: String, message: String) {
