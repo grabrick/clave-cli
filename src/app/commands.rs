@@ -252,6 +252,9 @@ impl App {
             }
             "/status" => self.show_status(),
             "/cost" => self.show_cost(),
+            "/retry" => self.retry_last(),
+            "/export" => self.export_chat(),
+            "/search" => self.open_search(),
             "/effort" => {
                 self.push_command_invocation(line);
                 self.effort_original = Some(self.effort_snapshot());
@@ -417,6 +420,39 @@ impl App {
         );
     }
 
+    fn retry_last(&mut self) {
+        match self.last_chat_message.clone() {
+            Some(message) => self.start_chat(message),
+            None => self.push_system(self.lang.choose(
+                "Нет последнего запроса для повтора.",
+                "No previous request to retry.",
+            )),
+        }
+    }
+
+    fn export_chat(&mut self) {
+        let dir = self.resolved_work_dir();
+        let path = dir.join(format!("clave-{}.md", sanitize_chat_id(&self.chat_id)));
+        let content = format!(
+            "# Clave · {}\n\n{}\n",
+            self.chat_id,
+            self.transcript.join("\n")
+        );
+        match fs::write(&path, content) {
+            Ok(()) => self.push_system(format!(
+                "{} {}",
+                self.lang.choose("Чат экспортирован:", "Chat exported:"),
+                path.display()
+            )),
+            Err(err) => self.push_system(format!(
+                "{} {}",
+                self.lang
+                    .choose("Не удалось экспортировать:", "Export failed:"),
+                err
+            )),
+        }
+    }
+
     fn push_status_row(&mut self, label: &str, value: String) {
         self.push_system(format!("  ⎿ {label}: {value}"));
     }
@@ -456,6 +492,9 @@ impl App {
                 | "/out"
                 | "/status"
                 | "/cost"
+                | "/retry"
+                | "/export"
+                | "/search"
                 | "/setup"
                 | "/quit"
         )

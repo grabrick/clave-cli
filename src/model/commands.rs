@@ -112,6 +112,24 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Открыть сохранённый чат",
     },
     CommandSpec {
+        usage: "/retry",
+        insert: "/retry",
+        description_en: "Repeat the last chat request",
+        description_ru: "Повторить последний запрос",
+    },
+    CommandSpec {
+        usage: "/export",
+        insert: "/export",
+        description_en: "Export chat to a markdown file",
+        description_ru: "Экспортировать чат в markdown",
+    },
+    CommandSpec {
+        usage: "/search",
+        insert: "/search",
+        description_en: "Search the transcript (Ctrl+R)",
+        description_ru: "Поиск по ленте (Ctrl+R)",
+    },
+    CommandSpec {
         usage: "/color",
         insert: "/color ",
         description_en: "Set the prompt bar color",

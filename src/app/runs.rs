@@ -6,6 +6,7 @@ impl App {
     }
 
     pub(crate) fn start_chat(&mut self, message: String) {
+        self.last_chat_message = Some(message.clone());
         self.start_chat_with_prompt(message.clone(), message);
     }
 
