@@ -37,6 +37,21 @@ pub(crate) fn command_palette_selected_bg(theme: Theme, level: usize) -> Option<
     }
 }
 
+pub(crate) fn command_palette_scroll_offset(
+    selected: usize,
+    visible_rows: usize,
+    total_rows: usize,
+) -> usize {
+    if visible_rows == 0 || total_rows <= visible_rows {
+        return 0;
+    }
+
+    selected
+        .saturating_add(1)
+        .saturating_sub(visible_rows)
+        .min(total_rows.saturating_sub(visible_rows))
+}
+
 pub(crate) fn draw_command_screen(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Clear, area);
     if area.height == 0 {
@@ -53,15 +68,18 @@ pub(crate) fn draw_command_screen(frame: &mut Frame<'_>, area: Rect, app: &App) 
         .selected_suggestion
         .min(commands.len().saturating_sub(1));
     let visible = area.height as usize;
+    let offset = command_palette_scroll_offset(selected, visible, commands.len());
     let fade_level = command_palette_fade_level(app);
 
     let lines = commands
         .iter()
+        .enumerate()
+        .skip(offset)
         .take(visible)
         .enumerate()
-        .map(|(index, command)| {
-            let is_selected = index == selected;
-            let row_fade = fade_level.saturating_sub(index / 3);
+        .map(|(visual_index, (command_index, command))| {
+            let is_selected = command_index == selected;
+            let row_fade = fade_level.saturating_sub(visual_index / 3);
             let command_style = if is_selected {
                 let mut style = Style::default()
                     .fg(if row_fade >= 5 {
@@ -100,4 +118,23 @@ pub(crate) fn draw_command_screen(frame: &mut Frame<'_>, area: Rect, app: &App) 
         .collect::<Vec<_>>();
 
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scroll_offset_keeps_selected_row_visible() {
+        assert_eq!(command_palette_scroll_offset(0, 12, 31), 0);
+        assert_eq!(command_palette_scroll_offset(11, 12, 31), 0);
+        assert_eq!(command_palette_scroll_offset(12, 12, 31), 1);
+        assert_eq!(command_palette_scroll_offset(30, 12, 31), 19);
+    }
+
+    #[test]
+    fn scroll_offset_handles_short_or_empty_lists() {
+        assert_eq!(command_palette_scroll_offset(7, 12, 8), 0);
+        assert_eq!(command_palette_scroll_offset(7, 0, 8), 0);
+    }
 }
