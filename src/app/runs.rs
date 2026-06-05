@@ -13,7 +13,7 @@ impl App {
         if self.running {
             self.push_system(
                 self.lang
-                    .choose("Duel уже выполняется.", "A duel is already running."),
+                    .choose("Clave уже выполняется.", "Clave is already running."),
             );
             return;
         }
@@ -67,7 +67,7 @@ impl App {
                 run_chat_provider(provider, &effort, &prompt, &work_dir, cancel_rx);
 
             match command_result {
-                Ok(ChatRunResult::Completed(code, stdout, stderr)) => {
+                Ok(ChatRunResult::Completed(code, stdout, stderr, usage)) => {
                     let stdout = stdout.trim();
                     let stderr = stderr.trim();
 
@@ -90,7 +90,7 @@ impl App {
                         emit_error_lines(&tx, stderr);
                     }
 
-                    let _ = tx.send(WorkerEvent::ChatDone(provider, code));
+                    let _ = tx.send(WorkerEvent::ChatDone(provider, code, usage));
                 }
                 Ok(ChatRunResult::Cancelled) => {
                     let _ = tx.send(WorkerEvent::Cancelled);
@@ -110,7 +110,7 @@ impl App {
         if self.running {
             self.push_system(
                 self.lang
-                    .choose("Duel уже выполняется.", "A duel is already running."),
+                    .choose("Clave уже выполняется.", "Clave is already running."),
             );
             return;
         }
@@ -124,8 +124,8 @@ impl App {
             None => {
                 self.status = "engine missing".to_string();
                 self.push_system(self.lang.choose(
-                    "spec-duel не найден. Задай DUEL_ENGINE или запусти из корня проекта.",
-                    "spec-duel engine not found. Set DUEL_ENGINE or run from project root.",
+                    "spec-clave не найден. Задай CLAVE_ENGINE или запусти из корня проекта.",
+                    "spec-clave engine not found. Set CLAVE_ENGINE or run from project root.",
                 ));
                 return;
             }
@@ -134,7 +134,7 @@ impl App {
 
         self.running = true;
         self.run_started_at = Some(Instant::now());
-        self.run_label = "spec-duel".to_string();
+        self.run_label = ENGINE_NAME.to_string();
         self.run_token_estimate = Some(estimate_tokens(&task));
         self.run_activity.clear();
         self.cancel_tx = Some(cancel_tx);
@@ -164,8 +164,9 @@ impl App {
         let work_dir = self.resolved_work_dir();
         let work_dir_arg = work_dir.to_string_lossy().to_string();
         self.push_run_activity(format!(
-            "{} spec-duel",
-            self.lang.choose("инструмент:", "tool:")
+            "{} {}",
+            self.lang.choose("инструмент:", "tool:"),
+            ENGINE_NAME
         ));
         self.push_run_activity(format!(
             "{} {}",

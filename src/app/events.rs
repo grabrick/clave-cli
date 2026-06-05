@@ -5,13 +5,13 @@ pub(crate) enum WorkerEvent {
     Line(String),
     ChatLine(String),
     Done(i32),
-    ChatDone(&'static str, i32),
+    ChatDone(&'static str, i32, Option<RunUsage>),
     Cancelled,
     Failed(String),
 }
 
 pub(crate) enum ChatRunResult {
-    Completed(i32, String, String),
+    Completed(i32, String, String, Option<RunUsage>),
     Cancelled,
 }
 
@@ -81,10 +81,13 @@ impl App {
                     self.push_system(format!(
                         "{} {code}.",
                         self.lang
-                            .choose("Duel завершился с кодом", "Duel finished with exit code")
+                            .choose("Clave завершился с кодом", "Clave finished with exit code")
                     ));
                 }
-                WorkerEvent::ChatDone(provider, code) => {
+                WorkerEvent::ChatDone(provider, code, usage) => {
+                    if let Some(usage) = usage {
+                        self.usage.record(provider, usage);
+                    }
                     self.running = false;
                     self.run_started_at = None;
                     self.run_label.clear();

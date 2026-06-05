@@ -70,6 +70,7 @@ pub(crate) struct App {
     pub(crate) linked_effort_split: bool,
     pub(crate) tx: Sender<WorkerEvent>,
     pub(crate) rx: Receiver<WorkerEvent>,
+    pub(crate) usage: SessionUsage,
 }
 
 impl App {
@@ -151,6 +152,7 @@ impl App {
             linked_effort_split: config.linked_effort_split,
             tx,
             rx,
+            usage: SessionUsage::new(),
         }
     }
 }

@@ -55,13 +55,11 @@ pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language) -> Strin
         "Reply in English unless the user asks for another language.",
     );
     format!(
-        concat!(
-            "You are Duel Code, a direct chat assistant inside a terminal UI.\n",
-            "Answer the user's message directly. Do not create a spec, do not run a planning loop, and do not modify files.\n",
-            "Keep the answer concise and useful. {language_hint}\n\n",
-            "Recent chat context:\n{context}\n\n",
-            "User message:\n{message}"
-        ),
+        "You are {APP_NAME}, a direct chat assistant inside a terminal UI.\n\
+         Answer the user's message directly. Do not create a spec, do not run a planning loop, and do not modify files.\n\
+         Keep the answer concise and useful. {language_hint}\n\n\
+         Recent chat context:\n{context}\n\n\
+         User message:\n{message}",
         language_hint = language_hint,
         context = if context.trim().is_empty() { "(empty)" } else { context },
         message = message
@@ -89,8 +87,18 @@ pub(crate) fn run_chat_provider(
     work_dir: &Path,
     cancel_rx: Receiver<()>,
 ) -> io::Result<ChatRunResult> {
+    let codex_out_file = env::temp_dir().join(format!(
+        "clave-codex-{}-{}.txt",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     let mut command = if provider == "claude" {
-        let program = env::var("AI_ORCHESTRATOR_CLAUDE").unwrap_or_else(|_| "claude".to_string());
+        let program = env::var("CLAVE_CLAUDE")
+            .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
+            .unwrap_or_else(|_| "claude".to_string());
         let mut command = Command::new(program);
         command.args([
             "-p",
@@ -102,15 +110,21 @@ pub(crate) fn run_chat_provider(
             "--max-turns",
             "3",
             "--output-format",
-            "text",
+            "json",
             prompt,
         ]);
         command
     } else {
-        let program = env::var("AI_ORCHESTRATOR_CODEX").unwrap_or_else(|_| "codex".to_string());
+        let program = env::var("CLAVE_CODEX")
+            .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
+            .unwrap_or_else(|_| "codex".to_string());
         let mut command = Command::new(program);
+        let codex_out = codex_out_file.to_string_lossy().into_owned();
         command.args([
             "exec",
+            "--json",
+            "-o",
+            &codex_out,
             "-c",
             &format!("model_reasoning_effort=\"{}\"", effort),
             "--skip-git-repo-check",
@@ -153,15 +167,121 @@ pub(crate) fn run_chat_provider(
                 let stderr = stderr_handle
                     .map(|handle| handle.join().unwrap_or_default())
                     .unwrap_or_default();
-                return Ok(ChatRunResult::Completed(
-                    status.code().unwrap_or(1),
-                    stdout,
-                    stderr,
-                ));
+
+                let (text, usage, is_error) = if provider == "claude" {
+                    let parsed = parse_claude_response(&stdout);
+                    (parsed.text, parsed.usage, parsed.is_error)
+                } else {
+                    let text = fs::read_to_string(&codex_out_file).unwrap_or_default();
+                    let usage = parse_codex_usage(&stdout);
+                    let _ = fs::remove_file(&codex_out_file);
+                    (text, usage, false)
+                };
+
+                let mut code = status.code().unwrap_or(1);
+                if is_error && code == 0 {
+                    code = 1;
+                }
+                return Ok(ChatRunResult::Completed(code, text, stderr, usage));
             }
             None => thread::sleep(Duration::from_millis(80)),
         }
     }
+}
+
+pub(crate) struct ChatResponse {
+    pub(crate) text: String,
+    pub(crate) usage: Option<RunUsage>,
+    pub(crate) is_error: bool,
+}
+
+/// Разобрать ответ `claude -p --output-format json`. При невалидном JSON —
+/// fallback: весь stdout как текст, usage отсутствует.
+pub(crate) fn parse_claude_response(stdout: &str) -> ChatResponse {
+    let trimmed = stdout.trim();
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(value) => {
+            let text = value
+                .get("result")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let is_error = value
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let usage = value.get("usage").map(|u| RunUsage {
+                input: u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                output: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                cache_read: u
+                    .get("cache_read_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                cost_usd: value
+                    .get("total_cost_usd")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+            });
+            ChatResponse {
+                text,
+                usage,
+                is_error,
+            }
+        }
+        Err(_) => ChatResponse {
+            text: trimmed.to_string(),
+            usage: None,
+            is_error: false,
+        },
+    }
+}
+
+/// Рекурсивно ищем объект с токенами (имена полей различаются между версиями codex).
+fn find_token_usage(value: &serde_json::Value) -> Option<RunUsage> {
+    let input = value
+        .get("input_tokens")
+        .or_else(|| value.get("prompt_tokens"))
+        .and_then(|v| v.as_u64());
+    let output = value
+        .get("output_tokens")
+        .or_else(|| value.get("completion_tokens"))
+        .and_then(|v| v.as_u64());
+    if let (Some(input), Some(output)) = (input, output) {
+        let cache_read = value
+            .get("cached_input_tokens")
+            .or_else(|| value.get("cache_read_input_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        return Some(RunUsage {
+            input,
+            output,
+            cache_read,
+            cost_usd: 0.0,
+        });
+    }
+    match value {
+        serde_json::Value::Object(map) => map.values().find_map(find_token_usage),
+        serde_json::Value::Array(items) => items.iter().find_map(find_token_usage),
+        _ => None,
+    }
+}
+
+/// Разобрать JSONL событий `codex exec --json`, вернуть последний найденный usage.
+/// codex не сообщает стоимость, поэтому cost_usd = 0.0.
+pub(crate) fn parse_codex_usage(jsonl: &str) -> Option<RunUsage> {
+    let mut last = None;
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(usage) = find_token_usage(&value) {
+                last = Some(usage);
+            }
+        }
+    }
+    last
 }
 
 pub(crate) fn spawn_capture_reader<R>(reader: R) -> thread::JoinHandle<String>
@@ -201,6 +321,12 @@ pub(crate) fn emit_error_lines(tx: &Sender<WorkerEvent>, text: &str) {
 }
 
 pub(crate) fn engine_path() -> Option<PathBuf> {
+    if let Ok(path) = env::var("CLAVE_ENGINE") {
+        if let Some(path) = existing_path(PathBuf::from(path)) {
+            return Some(path);
+        }
+    }
+
     if let Ok(path) = env::var("DUEL_ENGINE") {
         if let Some(path) = existing_path(PathBuf::from(path)) {
             return Some(path);
@@ -208,14 +334,20 @@ pub(crate) fn engine_path() -> Option<PathBuf> {
     }
 
     if let Ok(current_dir) = env::current_dir() {
-        if let Some(path) = existing_path(current_dir.join("spec-duel")) {
+        if let Some(path) = existing_path(current_dir.join(ENGINE_NAME)) {
+            return Some(path);
+        }
+        if let Some(path) = existing_path(current_dir.join(LEGACY_ENGINE_NAME)) {
             return Some(path);
         }
     }
 
     if let Ok(exe) = env::current_exe() {
         for dir in exe.ancestors().skip(1).take(4) {
-            if let Some(path) = existing_path(dir.join("spec-duel")) {
+            if let Some(path) = existing_path(dir.join(ENGINE_NAME)) {
+                return Some(path);
+            }
+            if let Some(path) = existing_path(dir.join(LEGACY_ENGINE_NAME)) {
                 return Some(path);
             }
         }
@@ -232,7 +364,8 @@ pub(crate) fn existing_path(path: PathBuf) -> Option<PathBuf> {
 }
 
 pub(crate) fn launch_work_dir() -> PathBuf {
-    env::var("DUEL_LAUNCH_CWD")
+    env::var("CLAVE_LAUNCH_CWD")
+        .or_else(|_| env::var("DUEL_LAUNCH_CWD"))
         .ok()
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
@@ -275,5 +408,41 @@ mod tests {
         let base = env::current_dir().expect("test cwd exists");
         let expected = base.join("src").canonicalize().expect("src dir exists");
         assert_eq!(resolve_work_dir("src", &base), expected);
+    }
+
+    #[test]
+    fn parses_claude_json_with_usage() {
+        let raw = r#"{"type":"result","is_error":false,"result":"Привет!","total_cost_usd":0.0123,"usage":{"input_tokens":120,"output_tokens":40,"cache_read_input_tokens":5}}"#;
+        let parsed = parse_claude_response(raw);
+        assert_eq!(parsed.text, "Привет!");
+        assert!(!parsed.is_error);
+        let usage = parsed.usage.expect("usage present");
+        assert_eq!(usage.input, 120);
+        assert_eq!(usage.output, 40);
+        assert_eq!(usage.cache_read, 5);
+        assert!((usage.cost_usd - 0.0123).abs() < 1e-9);
+    }
+
+    #[test]
+    fn claude_parser_falls_back_on_non_json() {
+        let parsed = parse_claude_response("просто текст без json");
+        assert_eq!(parsed.text, "просто текст без json");
+        assert!(parsed.usage.is_none());
+    }
+
+    #[test]
+    fn parses_codex_usage_from_jsonl() {
+        let jsonl = "{\"type\":\"item\",\"text\":\"hi\"}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":200,\"output_tokens\":60,\"cached_input_tokens\":10}}\n";
+        let usage = parse_codex_usage(jsonl).expect("usage found");
+        assert_eq!(usage.input, 200);
+        assert_eq!(usage.output, 60);
+        assert_eq!(usage.cache_read, 10);
+        assert_eq!(usage.cost_usd, 0.0);
+    }
+
+    #[test]
+    fn codex_usage_none_when_absent() {
+        let jsonl = "{\"type\":\"item\",\"text\":\"hi\"}\n";
+        assert!(parse_codex_usage(jsonl).is_none());
     }
 }
