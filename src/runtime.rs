@@ -4,6 +4,10 @@ use crate::*;
 pub(crate) fn main_entry() -> AnyResult<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
 
+    if args.first().is_some_and(|arg| arg == "--serve") {
+        return run_server(&args[1..]);
+    }
+
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
         print_usage();
         return Ok(());
@@ -18,7 +22,7 @@ pub(crate) fn main_entry() -> AnyResult<()> {
 
 pub(crate) fn print_usage() {
     println!(
-        "{APP_COMMAND}\n\nUsage:\n  {APP_COMMAND}                 Open TUI\n  {APP_COMMAND} <task...>       Run task directly through {ENGINE_NAME}\n  {APP_COMMAND} --help          Show help\n"
+        "{APP_COMMAND}\n\nUsage:\n  {APP_COMMAND}                 Open TUI\n  {APP_COMMAND} --serve         Start mobile web remote\n  {APP_COMMAND} <task...>       Run task directly through {ENGINE_NAME}\n  {APP_COMMAND} --help          Show help\n"
     );
 }
 
