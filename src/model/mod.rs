@@ -8,6 +8,7 @@ pub(crate) mod language;
 pub(crate) mod mode;
 pub(crate) mod overlay;
 pub(crate) mod provider;
+pub(crate) mod run_access;
 pub(crate) mod theme;
 pub(crate) mod usage;
 
@@ -19,6 +20,7 @@ pub(crate) use language::*;
 pub(crate) use mode::*;
 pub(crate) use overlay::*;
 pub(crate) use provider::*;
+pub(crate) use run_access::*;
 pub(crate) use theme::*;
 pub(crate) use usage::*;
 
