@@ -10,6 +10,7 @@ mod events;
 mod external;
 mod footer;
 mod onboarding;
+mod plan;
 mod runs;
 mod search;
 mod settings;
@@ -19,6 +20,7 @@ pub(crate) use effort::*;
 pub(crate) use events::*;
 pub(crate) use external::*;
 pub(crate) use onboarding::*;
+pub(crate) use plan::*;
 pub(crate) use settings::*;
 
 pub(crate) struct App {
@@ -68,6 +70,8 @@ pub(crate) struct App {
     pub(crate) search_query: String,
     pub(crate) search_index: usize,
     pub(crate) last_chat_message: Option<String>,
+    pub(crate) pending_plan: Option<PendingPlan>,
+    pub(crate) plan_flow: PlanFlow,
     pub(crate) effort_original: Option<EffortSnapshot>,
     pub(crate) effort_focus: usize,
     pub(crate) settings_original: Option<SettingsSnapshot>,
@@ -157,6 +161,8 @@ impl App {
             search_query: String::new(),
             search_index: 0,
             last_chat_message: None,
+            pending_plan: None,
+            plan_flow: PlanFlow::None,
             effort_original: None,
             effort_focus: 0,
             settings_original: None,

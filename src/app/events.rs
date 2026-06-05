@@ -7,6 +7,7 @@ pub(crate) enum WorkerEvent {
     Activity(String),
     Done(i32),
     ChatDone(&'static str, i32, Option<RunUsage>),
+    PlanReady(&'static str, String, i32, Option<RunUsage>),
     Cancelled,
     Failed(String),
 }
@@ -118,6 +119,31 @@ impl App {
                                 .choose("завершился с кодом", "finished with exit code"),
                             code
                         ));
+                    }
+                }
+                WorkerEvent::PlanReady(provider, plan, code, usage) => {
+                    if let Some(usage) = usage {
+                        self.usage.record(provider, usage);
+                    }
+                    self.running = false;
+                    self.run_started_at = None;
+                    self.run_label.clear();
+                    self.run_token_estimate = None;
+                    self.cancel_tx = None;
+
+                    let task = match std::mem::replace(&mut self.plan_flow, PlanFlow::None) {
+                        PlanFlow::Planning { task } => Some(task),
+                        _ => None,
+                    };
+
+                    if code == 0 && !plan.trim().is_empty() {
+                        if let Some(task) = task {
+                            self.pending_plan = Some(PendingPlan { task, plan });
+                            self.status = self.lang.choose("план готов", "plan ready").to_string();
+                        }
+                    } else {
+                        self.pending_plan = None;
+                        self.status = self.lang.choose("ошибка плана", "plan failed").to_string();
                     }
                 }
                 WorkerEvent::Cancelled => {
