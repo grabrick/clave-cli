@@ -20,26 +20,37 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
         }
     }
 
-    let left = app.lang.choose(
-        "? подсказки · / команды · ↑↓ история",
-        "? for shortcuts · / for commands · ↑↓ history",
-    );
+    let mode_label = app.chat_mode.label(app.lang);
+    let hints = app
+        .lang
+        .choose("? подсказки · / команды", "? shortcuts · / commands");
     let (right, right_style) = footer_right_segment(app);
     let width = area.width as usize;
     let right_slot_width = footer_right_slot_width(app).min(width);
     let right = truncate_chars(&right, right_slot_width);
     let right_width = right.chars().count();
-    let left_width = left.chars().count();
+
+    let mode_width = mode_label.chars().count();
+    let sep_width = 2;
     let min_gap = 2;
-    let left = if left_width + right_slot_width + min_gap > width {
-        truncate_chars(left, width.saturating_sub(right_slot_width + min_gap))
+    let used = mode_width + sep_width + right_slot_width + min_gap;
+    let hints = if used + hints.chars().count() > width {
+        truncate_chars(hints, width.saturating_sub(used))
     } else {
-        left.to_string()
+        hints.to_string()
     };
-    let gap = width.saturating_sub(left.chars().count() + right_slot_width);
+    let left_width = mode_width + sep_width + hints.chars().count();
+    let gap = width.saturating_sub(left_width + right_slot_width);
     let right_padding = right_slot_width.saturating_sub(right_width);
     let line = Line::from(vec![
-        Span::styled(left, Style::default().fg(app.theme.accent_soft())),
+        Span::styled(
+            mode_label,
+            Style::default()
+                .fg(app.chat_mode.color())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(hints, Style::default().fg(app.theme.accent_soft())),
         Span::raw(" ".repeat(gap)),
         Span::raw(" ".repeat(right_padding)),
         Span::styled(right, right_style),

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+pub(crate) mod chat_mode;
 pub(crate) mod commands;
 pub(crate) mod constants;
 pub(crate) mod effort;
@@ -10,6 +11,7 @@ pub(crate) mod provider;
 pub(crate) mod theme;
 pub(crate) mod usage;
 
+pub(crate) use chat_mode::*;
 pub(crate) use commands::*;
 pub(crate) use constants::*;
 pub(crate) use effort::*;

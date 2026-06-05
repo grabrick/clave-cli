@@ -28,7 +28,8 @@ impl App {
         let effort = self.provider_effort(provider).to_string();
         let context = recent_chat_context(&self.transcript, 40);
         let lang = self.lang;
-        let prompt = chat_prompt(&message, &context, lang);
+        let mode = self.chat_mode;
+        let prompt = chat_prompt(&message, &context, lang, mode);
         let token_estimate = estimate_tokens(&prompt);
         let work_dir = self.resolved_work_dir();
         let (cancel_tx, cancel_rx) = mpsc::channel();
@@ -72,6 +73,7 @@ impl App {
                 cancel_rx,
                 tx.clone(),
                 lang,
+                mode,
             );
 
             match command_result {

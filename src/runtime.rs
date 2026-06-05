@@ -182,6 +182,7 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => app.submit_input(),
         KeyCode::Tab => app.complete_command(),
+        KeyCode::BackTab => app.chat_mode = app.chat_mode.next(),
         KeyCode::Backspace => app.backspace(),
         KeyCode::Delete => app.delete(),
         KeyCode::Left => app.move_left(),

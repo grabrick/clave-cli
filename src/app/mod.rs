@@ -24,6 +24,7 @@ pub(crate) use settings::*;
 pub(crate) struct App {
     pub(crate) mode: Mode,
     pub(crate) direct_provider: Provider,
+    pub(crate) chat_mode: ChatMode,
     pub(crate) theme: Theme,
     pub(crate) lang: Language,
     pub(crate) rounds: usize,
@@ -112,6 +113,7 @@ impl App {
         Self {
             mode: config.mode,
             direct_provider: config.direct_provider,
+            chat_mode: ChatMode::default(),
             theme: config.theme,
             lang: config.lang,
             rounds: config.rounds,

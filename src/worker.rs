@@ -49,19 +49,25 @@ pub(crate) fn provider_display(provider: &str, lang: Language) -> &'static str {
     }
 }
 
-pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language) -> String {
+pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language, mode: ChatMode) -> String {
     let language_hint = lang.choose(
         "Отвечай на русском, если пользователь не просит другой язык.",
         "Reply in English unless the user asks for another language.",
     );
+    let mode_hint = mode.prompt_hint(lang);
     format!(
-        "You are {APP_NAME}, an AI coding agent working inside a terminal UI.\n\
-         You can read, create and edit files and run commands in the working directory to accomplish the user's request.\n\
+        "You are {APP_NAME}, an AI assistant inside a terminal UI.\n\
+         {mode_hint}\n\
          Keep your final answer concise and useful. {language_hint}\n\n\
          Recent chat context:\n{context}\n\n\
          User message:\n{message}",
+        mode_hint = mode_hint,
         language_hint = language_hint,
-        context = if context.trim().is_empty() { "(empty)" } else { context },
+        context = if context.trim().is_empty() {
+            "(empty)"
+        } else {
+            context
+        },
         message = message
     )
 }
@@ -80,6 +86,7 @@ pub(crate) fn recent_chat_context(transcript: &[String], max_lines: usize) -> St
         .join("\n")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_chat_provider(
     provider: &'static str,
     effort: &str,
@@ -88,6 +95,7 @@ pub(crate) fn run_chat_provider(
     cancel_rx: Receiver<()>,
     tx: Sender<WorkerEvent>,
     lang: Language,
+    mode: ChatMode,
 ) -> io::Result<ChatRunResult> {
     let codex_out_file = env::temp_dir().join(format!(
         "clave-codex-{}-{}.txt",
@@ -108,9 +116,9 @@ pub(crate) fn run_chat_provider(
             effort,
             "--no-session-persistence",
             "--tools",
-            "Read Edit Write Bash Grep Glob",
+            mode.claude_tools(),
             "--permission-mode",
-            "acceptEdits",
+            mode.claude_permission(),
             "--max-turns",
             "20",
             "--output-format",
@@ -137,7 +145,7 @@ pub(crate) fn run_chat_provider(
             "--color",
             "never",
             "-s",
-            "workspace-write",
+            mode.codex_sandbox(),
             prompt,
         ]);
         command
