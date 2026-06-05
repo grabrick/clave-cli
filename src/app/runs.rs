@@ -11,6 +11,25 @@ impl App {
     }
 
     pub(crate) fn start_chat_with_prompt(&mut self, display_message: String, message: String) {
+        let context = recent_chat_context(&self.transcript, 40);
+        let prompt = chat_prompt(&message, &context, self.lang, self.chat_mode);
+        self.run_provider_chat(
+            format!("◆ {display_message}"),
+            prompt,
+            RunAccess::Chat(self.chat_mode),
+            false,
+        );
+    }
+
+    /// Единая точка запуска провайдера как агента. `planning = true` → завершение
+    /// уходит как `PlanReady` (фаза 1 плана), иначе `ChatDone` (обычный чат и фаза 2).
+    pub(crate) fn run_provider_chat(
+        &mut self,
+        display: String,
+        prompt: String,
+        access: RunAccess,
+        planning: bool,
+    ) {
         if self.running {
             self.push_system(
                 self.lang
@@ -26,10 +45,7 @@ impl App {
         let provider = self.direct_provider.as_str();
         let provider_name = provider_display(provider, self.lang);
         let effort = self.provider_effort(provider).to_string();
-        let context = recent_chat_context(&self.transcript, 40);
         let lang = self.lang;
-        let mode = self.chat_mode;
-        let prompt = chat_prompt(&message, &context, lang, mode);
         let token_estimate = estimate_tokens(&prompt);
         let work_dir = self.resolved_work_dir();
         let (cancel_tx, cancel_rx) = mpsc::channel();
@@ -42,7 +58,7 @@ impl App {
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
-        self.push_system(format!("◆ {display_message}"));
+        self.push_system(display);
         self.push_run_activity(format!(
             "{} {} CLI",
             self.lang.choose("инструмент:", "tool:"),
@@ -63,17 +79,11 @@ impl App {
             self.lang
                 .choose("ожидаю ответ модели...", "waiting for model output..."),
         );
+
         let tx = self.tx.clone();
         thread::spawn(move || {
             let command_result = run_chat_provider(
-                provider,
-                &effort,
-                &prompt,
-                &work_dir,
-                cancel_rx,
-                tx.clone(),
-                lang,
-                RunAccess::Chat(mode),
+                provider, &effort, &prompt, &work_dir, cancel_rx, tx.clone(), lang, access,
             );
 
             match command_result {
@@ -84,13 +94,13 @@ impl App {
                     if !stdout.is_empty() {
                         emit_chat_lines(&tx, stdout);
                     } else if code == 0 {
-                        let _ = tx.send(WorkerEvent::Line(format!(
-                            "{}",
+                        let _ = tx.send(WorkerEvent::Line(
                             lang.choose(
                                 "Модель не вернула текстовый ответ.",
-                                "The model returned no text response."
+                                "The model returned no text response.",
                             )
-                        )));
+                            .to_string(),
+                        ));
                     } else {
                         let _ = tx.send(WorkerEvent::Line(format!(
                             "{} {}:",
@@ -100,7 +110,16 @@ impl App {
                         emit_error_lines(&tx, stderr);
                     }
 
-                    let _ = tx.send(WorkerEvent::ChatDone(provider, code, usage));
+                    if planning {
+                        let _ = tx.send(WorkerEvent::PlanReady(
+                            provider,
+                            stdout.to_string(),
+                            code,
+                            usage,
+                        ));
+                    } else {
+                        let _ = tx.send(WorkerEvent::ChatDone(provider, code, usage));
+                    }
                 }
                 Ok(ChatRunResult::Cancelled) => {
                     let _ = tx.send(WorkerEvent::Cancelled);
