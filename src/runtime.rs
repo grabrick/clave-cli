@@ -124,6 +124,7 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         Overlay::Settings => handle_settings_key(app, key),
         Overlay::Chats => handle_chats_key(app, key),
         Overlay::Shortcuts => handle_shortcuts_key(app, key),
+        Overlay::Search => handle_search_key(app, key),
     }
 }
 
@@ -146,6 +147,7 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('k') => app.kill_after_cursor(),
             KeyCode::Char('w') => app.delete_word_back(),
             KeyCode::Char('d') => app.delete(),
+            KeyCode::Char('r') => app.open_search(),
             KeyCode::Left => app.move_word_left(),
             KeyCode::Right => app.move_word_right(),
             KeyCode::Backspace => app.delete_word_back(),
@@ -392,6 +394,23 @@ pub(crate) fn handle_effort_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.handle_ctrl_c();
         }
+        _ => {}
+    }
+}
+
+pub(crate) fn handle_search_key(app: &mut App, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        if matches!(key.code, KeyCode::Char('c')) {
+            app.handle_ctrl_c();
+        }
+        return;
+    }
+    match key.code {
+        KeyCode::Esc => app.close_search(),
+        KeyCode::Enter | KeyCode::Down => app.search_step(1),
+        KeyCode::Up => app.search_step(-1),
+        KeyCode::Backspace => app.search_backspace(),
+        KeyCode::Char(ch) if !ch.is_control() => app.search_input(ch),
         _ => {}
     }
 }

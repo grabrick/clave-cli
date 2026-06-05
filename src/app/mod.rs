@@ -11,6 +11,7 @@ mod external;
 mod footer;
 mod onboarding;
 mod runs;
+mod search;
 mod settings;
 
 pub(crate) use config::*;
@@ -63,6 +64,8 @@ pub(crate) struct App {
     pub(crate) chats_picker: Vec<ChatSummary>,
     pub(crate) chats_index: usize,
     pub(crate) scroll_offset: usize,
+    pub(crate) search_query: String,
+    pub(crate) search_index: usize,
     pub(crate) effort_original: Option<EffortSnapshot>,
     pub(crate) effort_focus: usize,
     pub(crate) settings_original: Option<SettingsSnapshot>,
@@ -148,6 +151,8 @@ impl App {
             chats_picker: Vec::new(),
             chats_index: 0,
             scroll_offset: 0,
+            search_query: String::new(),
+            search_index: 0,
             effort_original: None,
             effort_focus: 0,
             settings_original: None,
