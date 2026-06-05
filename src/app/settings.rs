@@ -36,7 +36,7 @@ impl App {
         self.push_command_invocation(command);
         self.settings_original = Some(self.settings_snapshot());
         self.settings_focus = 0;
-        self.settings_open = true;
+        self.overlay = Overlay::Settings;
         self.status = "settings".to_string();
     }
 

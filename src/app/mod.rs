@@ -59,10 +59,9 @@ pub(crate) struct App {
     pub(crate) selected_suggestion: usize,
     pub(crate) command_palette_opened_at: Option<Instant>,
     pub(crate) command_palette_query: String,
-    pub(crate) effort_picker: bool,
+    pub(crate) overlay: Overlay,
     pub(crate) effort_original: Option<EffortSnapshot>,
     pub(crate) effort_focus: usize,
-    pub(crate) settings_open: bool,
     pub(crate) settings_original: Option<SettingsSnapshot>,
     pub(crate) settings_focus: usize,
     pub(crate) effort_index: usize,
@@ -76,11 +75,14 @@ pub(crate) struct App {
 impl App {
     pub(crate) fn new() -> Self {
         let (tx, rx) = mpsc::channel();
+        migrate_legacy_state_if_needed();
         let config_path = config_path();
         let history_path = history_path();
         let chats_dir = chats_dir();
         let mut config = load_config(&config_path);
-        if env::var("DUEL_SKIP_ONBOARDING").ok().as_deref() == Some("1") {
+        if env::var("CLAVE_SKIP_ONBOARDING").ok().as_deref() == Some("1")
+            || env::var("DUEL_SKIP_ONBOARDING").ok().as_deref() == Some("1")
+        {
             config.onboarding_done = true;
         }
         config.effort_index = normalize_common_effort_index(config.effort_index);
@@ -138,10 +140,9 @@ impl App {
             selected_suggestion: 0,
             command_palette_opened_at: None,
             command_palette_query: String::new(),
-            effort_picker: false,
+            overlay: Overlay::None,
             effort_original: None,
             effort_focus: 0,
-            settings_open: false,
             settings_original: None,
             settings_focus: 0,
             effort_index: config.effort_index,

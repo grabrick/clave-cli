@@ -205,7 +205,7 @@ impl App {
                     "Usage: /color purple|cyan|rose|amber|mono",
                 )),
             },
-            "/plan" | "/duel" => {
+            "/plan" | "/clave" | "/duel" => {
                 if rest.trim().is_empty() {
                     self.push_system(
                         self.lang
@@ -255,7 +255,7 @@ impl App {
                 self.push_command_invocation(line);
                 self.effort_original = Some(self.effort_snapshot());
                 self.effort_focus = 0;
-                self.effort_picker = true;
+                self.overlay = Overlay::Effort;
                 self.status = "effort".to_string();
             }
             "/logout" | "/auth" => {

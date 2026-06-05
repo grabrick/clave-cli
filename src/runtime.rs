@@ -18,12 +18,12 @@ pub(crate) fn main_entry() -> AnyResult<()> {
 
 pub(crate) fn print_usage() {
     println!(
-        "duel\n\nUsage:\n  duel                 Open TUI\n  duel <task...>       Run task directly through spec-duel\n  duel --help          Show help\n"
+        "{APP_COMMAND}\n\nUsage:\n  {APP_COMMAND}                 Open TUI\n  {APP_COMMAND} <task...>       Run task directly through {ENGINE_NAME}\n  {APP_COMMAND} --help          Show help\n"
     );
 }
 
 pub(crate) fn run_engine_direct(args: Vec<String>) -> AnyResult<()> {
-    let engine = engine_path().ok_or("spec-duel engine not found")?;
+    let engine = engine_path().ok_or("spec-clave engine not found")?;
     let work_dir = launch_work_dir();
     let status = Command::new(&engine)
         .current_dir(work_dir)
@@ -118,16 +118,14 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    if app.effort_picker {
-        handle_effort_key(app, key);
-        return;
+    match app.overlay {
+        Overlay::None => handle_input_key(app, key),
+        Overlay::Effort => handle_effort_key(app, key),
+        Overlay::Settings => handle_settings_key(app, key),
     }
+}
 
-    if app.settings_open {
-        handle_settings_key(app, key);
-        return;
-    }
-
+pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
 
@@ -361,7 +359,7 @@ pub(crate) fn handle_effort_key(app: &mut App, key: KeyEvent) {
         KeyCode::Left => app.adjust_effort_focus(-1),
         KeyCode::Right => app.adjust_effort_focus(1),
         KeyCode::Enter => {
-            app.effort_picker = false;
+            app.overlay = Overlay::None;
             app.effort_original = None;
             app.status = app.lang.choose("готов", "ready").to_string();
             app.save_current_config(true);
@@ -371,7 +369,7 @@ pub(crate) fn handle_effort_key(app: &mut App, key: KeyEvent) {
             if let Some(snapshot) = app.effort_original.take() {
                 app.restore_effort_snapshot(snapshot);
             }
-            app.effort_picker = false;
+            app.overlay = Overlay::None;
             app.status = app.lang.choose("готов", "ready").to_string();
             app.push_command_result("Cancelled");
         }
@@ -389,7 +387,7 @@ pub(crate) fn handle_settings_key(app: &mut App, key: KeyEvent) {
         KeyCode::Left => app.adjust_settings_value(-1),
         KeyCode::Right => app.adjust_settings_value(1),
         KeyCode::Enter => {
-            app.settings_open = false;
+            app.overlay = Overlay::None;
             app.settings_original = None;
             app.status = app.lang.choose("готов", "ready").to_string();
             app.save_current_config(true);
@@ -399,7 +397,7 @@ pub(crate) fn handle_settings_key(app: &mut App, key: KeyEvent) {
             if let Some(snapshot) = app.settings_original.take() {
                 app.restore_settings_snapshot(snapshot);
             }
-            app.settings_open = false;
+            app.overlay = Overlay::None;
             app.status = app.lang.choose("готов", "ready").to_string();
             app.push_command_result("Cancelled");
         }

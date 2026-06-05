@@ -31,7 +31,7 @@ impl App {
     pub(crate) fn refresh_command_palette_state(&mut self) {
         let active = normalized_command_query(&self.input).is_some()
             && self.onboarding.is_none()
-            && !self.effort_picker;
+            && !self.overlay.is_open();
         if active {
             if self.command_palette_opened_at.is_none() {
                 self.command_palette_opened_at = Some(Instant::now());

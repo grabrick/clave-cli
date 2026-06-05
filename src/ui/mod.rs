@@ -34,14 +34,16 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         return;
     }
 
-    if app.effort_picker {
-        draw_effort_screen(frame, area, app);
-        return;
-    }
-
-    if app.settings_open {
-        draw_settings_screen(frame, area, app);
-        return;
+    match app.overlay {
+        Overlay::Effort => {
+            draw_effort_screen(frame, area, app);
+            return;
+        }
+        Overlay::Settings => {
+            draw_settings_screen(frame, area, app);
+            return;
+        }
+        Overlay::None => {}
     }
 
     let command_mode = normalized_command_query(&app.input).is_some();
