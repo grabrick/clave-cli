@@ -97,19 +97,23 @@ pub(crate) fn wrap_terminal_text_preserving_spaces(text: &str, max_chars: usize)
 
     let mut rows = Vec::new();
     let mut current = String::new();
+    // Длину ведём инкрементально: `current.chars().count()` в цикле давал O(n²)
+    // на длинных строках, а функция вызывается для каждой строки на каждом кадре.
+    let mut current_len = 0usize;
 
     for ch in text.chars() {
         if ch == '\n' {
-            rows.push(current);
-            current = String::new();
+            rows.push(std::mem::take(&mut current));
+            current_len = 0;
             continue;
         }
 
-        if current.chars().count() >= max_chars {
-            rows.push(current);
-            current = String::new();
+        if current_len >= max_chars {
+            rows.push(std::mem::take(&mut current));
+            current_len = 0;
         }
         current.push(ch);
+        current_len += 1;
     }
 
     rows.push(current);
@@ -164,4 +168,30 @@ pub(crate) fn wrap_chars(text: &str, max_chars: usize) -> Vec<String> {
         rows.push(current);
     }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_preserving_spaces_is_stable() {
+        // Характеризующий тест: оптимизация (O(n)) обязана давать тот же результат.
+        assert_eq!(wrap_terminal_text_preserving_spaces("", 5), vec![""]);
+        assert_eq!(wrap_terminal_text_preserving_spaces("abc", 5), vec!["abc"]);
+        assert_eq!(wrap_terminal_text_preserving_spaces("abcde", 5), vec!["abcde"]);
+        assert_eq!(
+            wrap_terminal_text_preserving_spaces("abcdef", 5),
+            vec!["abcde", "f"]
+        );
+        assert_eq!(
+            wrap_terminal_text_preserving_spaces("ab\ncd", 5),
+            vec!["ab", "cd"]
+        );
+        // Юникод считается по символам, а не байтам.
+        assert_eq!(
+            wrap_terminal_text_preserving_spaces("абвгде", 5),
+            vec!["абвгд", "е"]
+        );
+    }
 }
