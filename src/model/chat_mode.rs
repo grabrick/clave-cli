@@ -8,6 +8,7 @@ pub(crate) enum ChatMode {
     Discussion,
     Plan,
     FullAccess,
+    Tandem,
 }
 
 impl ChatMode {
@@ -15,7 +16,8 @@ impl ChatMode {
         match self {
             ChatMode::Discussion => ChatMode::Plan,
             ChatMode::Plan => ChatMode::FullAccess,
-            ChatMode::FullAccess => ChatMode::Discussion,
+            ChatMode::FullAccess => ChatMode::Tandem,
+            ChatMode::Tandem => ChatMode::Discussion,
         }
     }
 
@@ -24,6 +26,7 @@ impl ChatMode {
             ChatMode::Discussion => lang.choose(">> Обсуждение", ">> Discussion"),
             ChatMode::Plan => lang.choose(">> Режим плана", ">> Plan Mode"),
             ChatMode::FullAccess => lang.choose(">> Полный доступ", ">> Full Access"),
+            ChatMode::Tandem => lang.choose(">> Тандем", ">> Tandem"),
         }
     }
 
@@ -32,6 +35,7 @@ impl ChatMode {
             ChatMode::Discussion => Color::Gray,
             ChatMode::Plan => Color::Indexed(80),        // cyan
             ChatMode::FullAccess => Color::Indexed(120), // green
+            ChatMode::Tandem => Color::Indexed(170),     // magenta
         }
     }
 
@@ -41,6 +45,7 @@ impl ChatMode {
             ChatMode::Discussion => "",
             ChatMode::Plan => "Read Edit Write Grep Glob",
             ChatMode::FullAccess => "Read Edit Write Bash Grep Glob",
+            ChatMode::Tandem => "",
         }
     }
 
@@ -49,6 +54,7 @@ impl ChatMode {
             ChatMode::Discussion => "default",
             ChatMode::Plan => "acceptEdits",
             ChatMode::FullAccess => "bypassPermissions",
+            ChatMode::Tandem => "default",
         }
     }
 
@@ -56,6 +62,7 @@ impl ChatMode {
         match self {
             ChatMode::Discussion => "read-only",
             ChatMode::Plan | ChatMode::FullAccess => "workspace-write",
+            ChatMode::Tandem => "read-only",
         }
     }
 
@@ -73,6 +80,10 @@ impl ChatMode {
                 "Ты автономный агент: читай, создавай и правь файлы и выполняй команды в рабочей директории — решай всё сам.",
                 "You are an autonomous agent: read, create and edit files and run commands in the working directory — decide everything yourself.",
             ),
+            ChatMode::Tandem => lang.choose(
+                "Тандемный режим: исполнитель и критик работают в паре.",
+                "Tandem mode: an executor and a critic work as a pair.",
+            ),
         }
     }
 }
@@ -86,7 +97,8 @@ mod tests {
         assert_eq!(ChatMode::default(), ChatMode::Discussion);
         assert_eq!(ChatMode::Discussion.next(), ChatMode::Plan);
         assert_eq!(ChatMode::Plan.next(), ChatMode::FullAccess);
-        assert_eq!(ChatMode::FullAccess.next(), ChatMode::Discussion);
+        assert_eq!(ChatMode::FullAccess.next(), ChatMode::Tandem);
+        assert_eq!(ChatMode::Tandem.next(), ChatMode::Discussion);
 
         // Discussion — чистый чат
         assert_eq!(ChatMode::Discussion.claude_tools(), "");
@@ -103,5 +115,8 @@ mod tests {
             ChatMode::FullAccess.claude_permission(),
             "bypassPermissions"
         );
+
+        // Tandem существует в цикле и имеет метку
+        assert!(ChatMode::Tandem.label(Language::En).contains("Tandem"));
     }
 }
