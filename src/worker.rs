@@ -55,9 +55,9 @@ pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language) -> Strin
         "Reply in English unless the user asks for another language.",
     );
     format!(
-        "You are {APP_NAME}, a direct chat assistant inside a terminal UI.\n\
-         Answer the user's message directly. Do not create a spec, do not run a planning loop, and do not modify files.\n\
-         Keep the answer concise and useful. {language_hint}\n\n\
+        "You are {APP_NAME}, an AI coding agent working inside a terminal UI.\n\
+         You can read, create and edit files and run commands in the working directory to accomplish the user's request.\n\
+         Keep your final answer concise and useful. {language_hint}\n\n\
          Recent chat context:\n{context}\n\n\
          User message:\n{message}",
         language_hint = language_hint,
@@ -108,11 +108,14 @@ pub(crate) fn run_chat_provider(
             effort,
             "--no-session-persistence",
             "--tools",
-            "",
+            "Read Edit Write Bash Grep Glob",
+            "--permission-mode",
+            "acceptEdits",
             "--max-turns",
-            "3",
+            "20",
             "--output-format",
-            "json",
+            "stream-json",
+            "--verbose",
             prompt,
         ]);
         command
@@ -134,7 +137,7 @@ pub(crate) fn run_chat_provider(
             "--color",
             "never",
             "-s",
-            "read-only",
+            "workspace-write",
             prompt,
         ]);
         command
@@ -147,7 +150,7 @@ pub(crate) fn run_chat_provider(
         .spawn()?;
     let stdout_handle = child.stdout.take().map(|out| {
         if provider == "claude" {
-            spawn_capture_reader(out)
+            spawn_claude_activity_reader(out, tx.clone(), lang)
         } else {
             spawn_codex_activity_reader(out, tx.clone(), lang)
         }
@@ -370,6 +373,95 @@ pub(crate) fn spawn_codex_activity_reader(
     })
 }
 
+fn short_path(path: &str) -> String {
+    let tail: Vec<&str> = path.rsplit('/').take(2).collect();
+    tail.into_iter().rev().collect::<Vec<_>>().join("/")
+}
+
+/// Превратить claude tool_use в короткую человекочитаемую активность для лоадера.
+fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<String> {
+    let name = item.get("name")?.as_str()?;
+    let input = item.get("input");
+    let path = input
+        .and_then(|i| i.get("file_path"))
+        .and_then(|v| v.as_str())
+        .map(short_path);
+    let command = input
+        .and_then(|i| i.get("command"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let summary = match name {
+        "Read" | "NotebookRead" => {
+            format!(
+                "{} {}",
+                lang.choose("Читаю", "Reading"),
+                path.unwrap_or_default()
+            )
+        }
+        "Edit" | "MultiEdit" | "NotebookEdit" => {
+            format!(
+                "{} {}",
+                lang.choose("Правлю", "Editing"),
+                path.unwrap_or_default()
+            )
+        }
+        "Write" => format!(
+            "{} {}",
+            lang.choose("Создаю", "Writing"),
+            path.unwrap_or_default()
+        ),
+        "Bash" => format!(
+            "{} {}",
+            lang.choose("Выполняю", "Running"),
+            truncate_chars(command, 50)
+        ),
+        "Grep" => lang.choose("Ищу по коду", "Searching code").to_string(),
+        "Glob" => lang
+            .choose("Просматриваю файлы", "Listing files")
+            .to_string(),
+        other => format!("⚙ {other}"),
+    };
+    Some(summary)
+}
+
+/// Потоково читает claude stream-json: эмитит активность (tool_use) в лоадер
+/// и возвращает финальное result-событие (для разбора текста и usage).
+pub(crate) fn spawn_claude_activity_reader(
+    reader: impl Read + Send + 'static,
+    tx: Sender<WorkerEvent>,
+    lang: Language,
+) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        let mut result_line = String::new();
+        for line in reader.lines().map_while(Result::ok) {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
+            match value.get("type").and_then(|v| v.as_str()) {
+                Some("assistant") => {
+                    if let Some(content) = value
+                        .get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(|c| c.as_array())
+                    {
+                        for item in content {
+                            if item.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
+                                if let Some(activity) = summarize_claude_tool(item, lang) {
+                                    let _ = tx.send(WorkerEvent::Activity(activity));
+                                }
+                            }
+                        }
+                    }
+                }
+                Some("result") => result_line = line.clone(),
+                _ => {}
+            }
+        }
+        result_line
+    })
+}
+
 pub(crate) fn spawn_capture_reader<R>(reader: R) -> thread::JoinHandle<String>
 where
     R: Read + Send + 'static,
@@ -544,6 +636,39 @@ mod tests {
         assert_eq!(
             summarize_codex_command(grep, Language::En),
             "Searching code"
+        );
+    }
+
+    #[test]
+    fn summarizes_claude_tool_use() {
+        let read = serde_json::json!({
+            "type": "tool_use",
+            "name": "Read",
+            "input": {"file_path": "/Users/x/proj/src/model/overlay.rs"}
+        });
+        assert_eq!(
+            summarize_claude_tool(&read, Language::En),
+            Some("Reading model/overlay.rs".to_string())
+        );
+
+        let bash = serde_json::json!({
+            "type": "tool_use",
+            "name": "Bash",
+            "input": {"command": "cargo build"}
+        });
+        assert_eq!(
+            summarize_claude_tool(&bash, Language::En),
+            Some("Running cargo build".to_string())
+        );
+
+        let write = serde_json::json!({
+            "type": "tool_use",
+            "name": "Write",
+            "input": {"file_path": "/a/b/new.rs"}
+        });
+        assert_eq!(
+            summarize_claude_tool(&write, Language::En),
+            Some("Writing b/new.rs".to_string())
         );
     }
 }
