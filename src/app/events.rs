@@ -213,9 +213,11 @@ impl App {
 
         let total_chars = active.text.chars().count();
         let steps = (elapsed.as_millis() / 18).max(1) as usize;
+        // 6 символов за тик (было 3): печать завершается вдвое быстрее, значит
+        // меньше времени держим 60fps-анимацию ради typewriter-эффекта.
         active.visible_chars = active
             .visible_chars
-            .saturating_add(steps * 3)
+            .saturating_add(steps * 6)
             .min(total_chars);
         active.last_tick = Instant::now();
 
