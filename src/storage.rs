@@ -406,10 +406,11 @@ pub(crate) fn restore_or_create_chat(
     if let Some(id) = last_chat_id {
         let id = sanitize_chat_id(id);
         if !id.is_empty() {
-            let path = chat_path_for_id(chats_dir, &id);
-            if let Ok(lines) = load_chat_transcript(&path) {
-                if !lines.is_empty() {
-                    return (id, path, lines);
+            if let Some(path) = existing_chat_path(chats_dir, &id) {
+                if let Ok(lines) = load_chat_transcript(&path) {
+                    if !lines.is_empty() {
+                        return (id, path, lines);
+                    }
                 }
             }
         }
@@ -431,6 +432,21 @@ pub(crate) fn chat_path_for_id(chats_dir: &Path, chat_id: &str) -> PathBuf {
         sanitize_chat_id(chat_id),
         CHAT_FILE_EXTENSION
     ))
+}
+
+/// Найти файл чата по id с любым известным расширением (.clave или legacy .duel).
+pub(crate) fn existing_chat_path(chats_dir: &Path, chat_id: &str) -> Option<PathBuf> {
+    let id = sanitize_chat_id(chat_id);
+    if id.is_empty() {
+        return None;
+    }
+    for ext in [CHAT_FILE_EXTENSION, LEGACY_CHAT_FILE_EXTENSION] {
+        let path = chats_dir.join(format!("{id}.{ext}"));
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 pub(crate) fn sanitize_chat_id(value: &str) -> String {
@@ -612,6 +628,27 @@ mod tests {
         let (nid, _, nlines) = restore_or_create_chat(&dir, None, Language::Ru);
         assert_ne!(nid, id);
         assert!(nlines.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finds_legacy_duel_chat_files() {
+        let dir = env::temp_dir().join(format!("clave-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+
+        // legacy-чат с расширением .duel (как после миграции ~/.duel -> ~/.clave)
+        let id = "chat-legacy-9";
+        let legacy_path = dir.join(format!("{}.{}", id, LEGACY_CHAT_FILE_EXTENSION));
+        save_chat_transcript(&legacy_path, id, &["◆ старый".to_string()]).expect("save legacy");
+
+        // путь находится по любому расширению
+        assert_eq!(existing_chat_path(&dir, id), Some(legacy_path));
+        // и восстановление подхватывает legacy-файл
+        let (rid, _, lines) = restore_or_create_chat(&dir, Some(id), Language::Ru);
+        assert_eq!(rid, id);
+        assert_eq!(lines, vec!["◆ старый".to_string()]);
 
         let _ = fs::remove_dir_all(&dir);
     }

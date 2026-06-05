@@ -59,7 +59,10 @@ impl App {
             return;
         }
 
-        let path = chat_path_for_id(&self.chats_dir, &chat_id);
+        let Some(path) = existing_chat_path(&self.chats_dir, &chat_id) else {
+            self.push_system(self.lang.choose("Чат не найден.", "Chat not found."));
+            return;
+        };
         match load_chat_transcript(&path) {
             Ok(lines) if !lines.is_empty() => {
                 self.chat_id = chat_id;
@@ -112,9 +115,10 @@ impl App {
             if chat.id == self.chat_id || chat.lines >= 3 {
                 continue;
             }
-            let path = chat_path_for_id(&self.chats_dir, &chat.id);
-            if fs::remove_file(&path).is_ok() {
-                removed += 1;
+            if let Some(path) = existing_chat_path(&self.chats_dir, &chat.id) {
+                if fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                }
             }
         }
         self.push_system(format!(
