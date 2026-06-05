@@ -83,17 +83,18 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
         0
     };
 
-    // Транскрипт собираем в Line ОДИН раз за кадр — и для высоты, и для отрисовки
-    // (раньше transcript_lines строился дважды: в main_area_height и в draw_transcript).
-    let body_lines = if is_welcome {
-        Vec::new()
-    } else {
-        transcript_body_lines(app, area.width)
-    };
+    // Транскрипт берём из кэша (refresh_transcript_cache пересобирает его лишь при
+    // изменении содержимого); loader-хвост анимируется, поэтому строится каждый кадр.
+    let cached_transcript = app
+        .transcript_cache
+        .as_ref()
+        .map(|(_, lines)| lines.as_slice())
+        .unwrap_or(&[]);
+    let loader_tail = loader_tail_lines(app, area.width);
     let content_height = if is_welcome {
         area.height.min(12).max(1)
     } else {
-        (body_lines.len() as u16).max(1)
+        ((1 + cached_transcript.len() + loader_tail.len()).min(u16::MAX as usize) as u16).max(1)
     };
     let main_height = main_area_height(
         area,
@@ -121,7 +122,14 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     if is_welcome {
         draw_welcome(frame, chunks[0], app);
     } else {
-        draw_transcript(frame, chunks[0], app, &body_lines);
+        draw_transcript(
+            frame,
+            chunks[0],
+            app,
+            area.width,
+            cached_transcript,
+            &loader_tail,
+        );
     }
     draw_prompt_bar(frame, chunks[2], app);
     if command_mode {

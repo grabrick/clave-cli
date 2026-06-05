@@ -1,40 +1,68 @@
 use super::*;
 
-/// Собирает тело транскрипта (разделитель + строки + лоадер) в `Line` ОДИН раз.
-/// Результат используется и для высоты, и для отрисовки — раньше это строилось дважды.
-pub(crate) fn transcript_body_lines(app: &App, width: u16) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::styled(
-        "─".repeat(width as usize),
-        Style::default().fg(app.theme.accent_dim()),
-    )];
-    lines.extend(transcript_lines(
-        &app.transcript,
-        app.lang,
-        width,
-        app.theme,
-    ));
-
-    if app.running {
-        lines.push(Line::from(""));
-        lines.extend(loader_lines(app, width));
+/// Дешёвая сигнатура содержимого транскрипта для инвалидации кэша рендера.
+/// Хэш << полный рендер (нет аллокаций Line/Span, wrap, style), но точно
+/// отражает контент — поэтому кэш не может «устареть» незаметно.
+pub(crate) fn transcript_signature(
+    transcript: &[String],
+    width: u16,
+    theme: Theme,
+    lang: Language,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    width.hash(&mut hasher);
+    std::mem::discriminant(&theme).hash(&mut hasher);
+    std::mem::discriminant(&lang).hash(&mut hasher);
+    transcript.len().hash(&mut hasher);
+    for line in transcript {
+        line.hash(&mut hasher);
     }
+    hasher.finish()
+}
 
+/// Хвост из лоадера (анимируется каждый кадр, поэтому НЕ кэшируется).
+pub(crate) fn loader_tail_lines(app: &App, width: u16) -> Vec<Line<'static>> {
+    if !app.running {
+        return Vec::new();
+    }
+    let mut lines = vec![Line::from("")];
+    lines.extend(loader_lines(app, width));
     lines
 }
 
+/// Рендерит видимый срез из виртуального тела `[separator] + cached + loader_tail`,
+/// клонируя только строки в окне экрана (кэш экономит пересборку всех строк).
 pub(crate) fn draw_transcript(
     frame: &mut Frame<'_>,
     area: Rect,
     app: &App,
-    lines: &[Line<'static>],
+    width: u16,
+    cached: &[Line<'static>],
+    loader_tail: &[Line<'static>],
 ) {
     frame.render_widget(Clear, area);
+    let separator = Line::styled(
+        "─".repeat(width as usize),
+        Style::default().fg(app.theme.accent_dim()),
+    );
+    let total = 1 + cached.len() + loader_tail.len();
     let visible = area.height.saturating_sub(1) as usize;
-    let max_offset = lines.len().saturating_sub(visible);
+    let max_offset = total.saturating_sub(visible);
     let offset = app.scroll_offset.min(max_offset);
     let start = max_offset - offset;
-    let end = (start + visible).min(lines.len());
-    let slice = lines[start..end].to_vec();
+    let end = (start + visible).min(total);
+
+    let mut slice = Vec::with_capacity(end.saturating_sub(start));
+    for index in start..end {
+        if index == 0 {
+            slice.push(separator.clone());
+        } else if index <= cached.len() {
+            slice.push(cached[index - 1].clone());
+        } else {
+            slice.push(loader_tail[index - 1 - cached.len()].clone());
+        }
+    }
 
     let transcript = Paragraph::new(slice).wrap(Wrap { trim: false });
     frame.render_widget(transcript, area);

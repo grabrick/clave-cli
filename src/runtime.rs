@@ -71,6 +71,8 @@ pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> 
         app.expire_footer_notice();
         app.refresh_command_palette_state();
         app.refresh_footer_right_state();
+        let width = terminal.size().map(|size| size.width).unwrap_or(80);
+        app.refresh_transcript_cache(width);
         terminal.draw(|frame| draw(frame, &app))?;
 
         if app.should_quit {

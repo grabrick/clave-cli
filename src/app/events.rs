@@ -261,4 +261,16 @@ impl App {
             last_tick: Instant::now(),
         });
     }
+
+    /// Пересобирает кэш рендера транскрипта только при изменении содержимого
+    /// (хэш по width/theme/lang/строкам). Зовётся раз за кадр до отрисовки;
+    /// в фазе выполнения транскрипт стабилен, поэтому дорогой рендер пропускается.
+    pub(crate) fn refresh_transcript_cache(&mut self, width: u16) {
+        let sig = transcript_signature(&self.transcript, width, self.theme, self.lang);
+        let fresh = matches!(&self.transcript_cache, Some((cached, _)) if *cached == sig);
+        if !fresh {
+            let lines = transcript_lines(&self.transcript, self.lang, width, self.theme);
+            self.transcript_cache = Some((sig, lines));
+        }
+    }
 }
