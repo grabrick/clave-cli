@@ -94,10 +94,28 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Очистить контекст",
     },
     CommandSpec {
+        usage: "/clear history",
+        insert: "/clear history",
+        description_en: "Delete all saved chats except current",
+        description_ru: "Удалить все чаты, кроме текущего",
+    },
+    CommandSpec {
         usage: "/new",
         insert: "/new",
         description_en: "Start a new saved chat",
         description_ru: "Начать новый сохранённый чат",
+    },
+    CommandSpec {
+        usage: "/name <title>",
+        insert: "/name ",
+        description_en: "Name the current chat",
+        description_ru: "Задать имя текущему чату",
+    },
+    CommandSpec {
+        usage: "/rename <title>",
+        insert: "/rename ",
+        description_en: "Rename the current chat",
+        description_ru: "Переименовать текущий чат",
     },
     CommandSpec {
         usage: "/chats",

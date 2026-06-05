@@ -128,6 +128,50 @@ impl App {
             removed
         ));
     }
+
+    pub(crate) fn clear_all_chats(&mut self) {
+        let chats = list_saved_chats(&self.chats_dir, usize::MAX);
+        let mut removed = 0;
+        for chat in chats {
+            if chat.id == self.chat_id {
+                continue;
+            }
+            if let Some(path) = existing_chat_path(&self.chats_dir, &chat.id) {
+                if fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        self.push_system(format!(
+            "{} {}",
+            self.lang.choose("Удалено чатов:", "Removed chats:"),
+            removed
+        ));
+    }
+
+    pub(crate) fn rename_current_chat(&mut self, title: &str) {
+        let title = title.trim();
+        if title.is_empty() {
+            self.push_system(
+                self.lang
+                    .choose("Использование: /name <заголовок>", "Usage: /name <title>"),
+            );
+            return;
+        }
+        match set_chat_title(&self.chat_path, &self.chat_id, title) {
+            Ok(()) => self.push_system(format!(
+                "{} {}",
+                self.lang.choose("Чат назван:", "Chat named:"),
+                title
+            )),
+            Err(err) => self.push_system(format!(
+                "{} {}",
+                self.lang
+                    .choose("Не удалось переименовать:", "Failed to rename:"),
+                err
+            )),
+        }
+    }
 }
 
 impl App {

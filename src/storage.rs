@@ -535,17 +535,20 @@ pub(crate) fn chat_summary(path: &Path) -> Option<ChatSummary> {
         .and_then(|metadata| metadata.modified())
         .unwrap_or(UNIX_EPOCH);
     let lines = load_chat_transcript(path).ok()?;
-    let title = lines
-        .iter()
-        .find_map(|line| line.strip_prefix("◆ ").map(str::trim))
-        .or_else(|| {
-            lines
-                .iter()
-                .find(|line| !line.trim().is_empty())
-                .map(String::as_str)
-        })
-        .map(|line| truncate_chars(line, 72))
-        .unwrap_or_else(|| "empty chat".to_string());
+    let title = match read_chat_title(path) {
+        Some(custom) => truncate_chars(&custom, 72),
+        None => lines
+            .iter()
+            .find_map(|line| line.strip_prefix("◆ ").map(str::trim))
+            .or_else(|| {
+                lines
+                    .iter()
+                    .find(|line| !line.trim().is_empty())
+                    .map(String::as_str)
+            })
+            .map(|line| truncate_chars(line, 72))
+            .unwrap_or_else(|| "empty chat".to_string()),
+    };
 
     Some(ChatSummary {
         id,
@@ -553,6 +556,59 @@ pub(crate) fn chat_summary(path: &Path) -> Option<ChatSummary> {
         lines: lines.len(),
         modified,
     })
+}
+
+/// Прочитать кастомный заголовок чата из header файла (строка `title=`).
+pub(crate) fn read_chat_title(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if line == "---" {
+            break;
+        }
+        if let Some(rest) = line.strip_prefix("title=") {
+            let title = decode_field(rest);
+            if !title.trim().is_empty() {
+                return Some(title);
+            }
+        }
+    }
+    None
+}
+
+/// Записать кастомный заголовок чата в header (создаёт файл, если чата ещё нет).
+pub(crate) fn set_chat_title(path: &Path, chat_id: &str, title: &str) -> io::Result<()> {
+    if !path.exists() {
+        save_chat_transcript(path, chat_id, &[])?;
+    }
+    let content = fs::read_to_string(path)?;
+    let mut header = Vec::new();
+    let mut body = Vec::new();
+    let mut in_body = false;
+    for line in content.lines() {
+        if in_body {
+            body.push(line);
+        } else if line == "---" {
+            in_body = true;
+        } else if !line.starts_with("title=") {
+            header.push(line);
+        }
+    }
+
+    let mut out = String::new();
+    for line in header {
+        out.push_str(line);
+        out.push('\n');
+    }
+    let trimmed = title.trim();
+    if !trimmed.is_empty() {
+        out.push_str(&format!("title={}\n", encode_field(trimmed)));
+    }
+    out.push_str("---\n");
+    for line in body {
+        out.push_str(line);
+        out.push('\n');
+    }
+    fs::write(path, out)
 }
 
 pub(crate) fn find_last_run(transcript: &[String]) -> Option<String> {
@@ -649,6 +705,39 @@ mod tests {
         let (rid, _, lines) = restore_or_create_chat(&dir, Some(id), Language::Ru);
         assert_eq!(rid, id);
         assert_eq!(lines, vec!["◆ старый".to_string()]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chat_title_round_trip_and_summary_priority() {
+        let dir = env::temp_dir().join(format!("clave-title-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let id = "chat-title-1";
+        let path = chat_path_for_id(&dir, id);
+        save_chat_transcript(&path, id, &["◆ из контента".to_string()]).expect("save");
+
+        // изначально заголовок берётся из контента
+        assert_eq!(
+            chat_summary(&path).map(|c| c.title),
+            Some("из контента".to_string())
+        );
+
+        // задаём кастомный заголовок и читаем обратно
+        set_chat_title(&path, id, "Мой чат").expect("set title");
+        assert_eq!(read_chat_title(&path), Some("Мой чат".to_string()));
+
+        // chat_summary теперь отдаёт приоритет кастомному заголовку
+        assert_eq!(
+            chat_summary(&path).map(|c| c.title),
+            Some("Мой чат".to_string())
+        );
+        // тело чата не пострадало
+        assert_eq!(
+            load_chat_transcript(&path).unwrap(),
+            vec!["◆ из контента".to_string()]
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

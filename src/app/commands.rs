@@ -280,6 +280,7 @@ impl App {
                 self.status = self.lang.choose("настройка", "setup").to_string();
             }
             "/new" => self.start_new_chat(),
+            "/name" | "/rename" => self.rename_current_chat(&rest),
             "/chats" => {
                 if rest.trim() == "clear" {
                     self.clear_small_chats();
@@ -295,8 +296,12 @@ impl App {
                 }
             }
             "/clear" => {
-                self.transcript.clear();
-                self.push_system(self.lang.choose("Лента очищена.", "Transcript cleared."));
+                if rest.trim() == "history" {
+                    self.clear_all_chats();
+                } else {
+                    self.transcript.clear();
+                    self.push_system(self.lang.choose("Лента очищена.", "Transcript cleared."));
+                }
             }
             "/quit" | "/exit" => self.should_quit = true,
             _ => self.push_system(format!(
@@ -501,6 +506,8 @@ impl App {
                 | "/retry"
                 | "/export"
                 | "/search"
+                | "/name"
+                | "/rename"
                 | "/setup"
                 | "/quit"
         )
