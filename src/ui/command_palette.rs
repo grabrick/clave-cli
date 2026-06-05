@@ -59,11 +59,17 @@ pub(crate) fn draw_command_screen(frame: &mut Frame<'_>, area: Rect, app: &App) 
     }
 
     let suggestions = app.suggestions();
-    let commands = if suggestions.is_empty() {
-        COMMANDS.to_vec()
-    } else {
-        suggestions
-    };
+    let commands = suggestions;
+    if commands.is_empty() {
+        let line = Line::styled(
+            app.lang
+                .choose("Команды не найдены", "No matching commands"),
+            Style::default().fg(command_palette_muted(command_palette_fade_level(app))),
+        );
+        frame.render_widget(Paragraph::new(vec![line]), area);
+        return;
+    }
+
     let selected = app
         .selected_suggestion
         .min(commands.len().saturating_sub(1));

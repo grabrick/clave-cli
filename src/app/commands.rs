@@ -250,26 +250,7 @@ impl App {
                     ));
                 }
             }
-            "/status" => {
-                self.push_system(format!(
-                    "{}={} {}={} {}={} chat={} theme={} roles={}>{} cwd={} {}={} {}={}",
-                    self.lang.choose("режим", "mode"),
-                    self.mode.as_str(),
-                    self.lang.choose("язык", "lang"),
-                    self.lang.as_str(),
-                    self.lang.choose("раунды", "rounds"),
-                    self.rounds,
-                    self.direct_provider.as_str(),
-                    self.theme.as_str(),
-                    self.mode.architect_provider().as_str(),
-                    self.mode.reviewer_provider().as_str(),
-                    self.resolved_work_dir().display(),
-                    "effort",
-                    self.effort_summary(),
-                    "out",
-                    self.out_dir
-                ));
-            }
+            "/status" => self.show_status(),
             "/effort" => {
                 self.push_command_invocation(line);
                 self.effort_original = Some(self.effort_snapshot());
@@ -328,6 +309,53 @@ impl App {
             self.mode.as_str()
         ));
         self.ensure_auth_ready_for_current_mode();
+    }
+
+    fn show_status(&mut self) {
+        self.status = self.lang.choose("статус", "status").to_string();
+        self.push_system(self.lang.choose("⏺ Статус сессии", "⏺ Session status"));
+        self.push_status_row(
+            self.lang.choose("Режим", "Mode"),
+            self.mode.as_str().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Исполнитель", "Executor"),
+            self.mode.architect_provider().title().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Ревьюер", "Reviewer"),
+            self.mode.reviewer_provider().title().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Простой чат", "Direct chat"),
+            self.direct_provider.title().to_string(),
+        );
+        self.push_status_row(self.lang.choose("Effort", "Effort"), self.effort_summary());
+        self.push_status_row(
+            self.lang.choose("Раунды", "Rounds"),
+            self.rounds.to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Язык", "Language"),
+            self.lang.as_str().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Тема", "Theme"),
+            self.theme.title().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Рабочая директория", "Working directory"),
+            self.resolved_work_dir().display().to_string(),
+        );
+        self.push_status_row(
+            self.lang.choose("Артефакты", "Artifacts"),
+            self.out_dir.clone(),
+        );
+        self.push_status_row(self.lang.choose("Чат", "Chat"), self.chat_id.clone());
+    }
+
+    fn push_status_row(&mut self, label: &str, value: String) {
+        self.push_system(format!("  ⎿ {label}: {value}"));
     }
 
     #[cfg(test)]

@@ -235,8 +235,13 @@ impl CommandSpec {
 }
 
 pub(crate) fn normalized_command_query(input: &str) -> Option<String> {
-    let trimmed = input.trim();
+    let trimmed = input.trim_start();
     if trimmed.is_empty() {
+        return None;
+    }
+
+    let token_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    if token_end < trimmed.len() {
         return None;
     }
 
@@ -356,10 +361,9 @@ mod tests {
             normalized_command_query(".уаащке").as_deref(),
             Some("/effort")
         );
-        assert_eq!(
-            normalized_command_query("/ьщву сщвуч-щтдн").as_deref(),
-            Some("/mode codex-only")
-        );
+        assert_eq!(normalized_command_query("/ьщву сщвуч-щтдн"), None);
+        assert_eq!(normalized_command_query("/plan "), None);
+        assert_eq!(normalized_command_query("/plan задача"), None);
     }
 
     #[test]
