@@ -100,32 +100,80 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     truncated
 }
 
-pub(crate) fn duel_state_dir() -> PathBuf {
+pub(crate) fn migrate_legacy_state_if_needed() {
+    if env::var("CLAVE_HOME").is_ok()
+        || env::var("DUEL_HOME").is_ok()
+        || env::var("CLAVE_CONFIG").is_ok()
+        || env::var("DUEL_CONFIG").is_ok()
+    {
+        return;
+    }
+
+    let Some(legacy_dir) = default_home_state_dir(LEGACY_STATE_DIR_NAME) else {
+        return;
+    };
+    let Some(new_dir) = default_home_state_dir(STATE_DIR_NAME) else {
+        return;
+    };
+
+    if new_dir.exists() || !legacy_dir.exists() {
+        return;
+    }
+
+    let _ = copy_dir_all(&legacy_dir, &new_dir);
+}
+
+pub(crate) fn clave_state_dir() -> PathBuf {
+    if let Ok(path) = env::var("CLAVE_HOME") {
+        return PathBuf::from(path);
+    }
+
     if let Ok(path) = env::var("DUEL_HOME") {
         return PathBuf::from(path);
     }
 
-    if let Ok(home) = env::var("HOME") {
-        return PathBuf::from(home).join(".duel");
-    }
+    default_home_state_dir(STATE_DIR_NAME).unwrap_or_else(|| PathBuf::from(STATE_DIR_NAME))
+}
 
-    PathBuf::from(".duel")
+fn default_home_state_dir(name: &str) -> Option<PathBuf> {
+    env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(name))
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&source_path, &destination_path)?;
+        } else if !destination_path.exists() {
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn history_path() -> PathBuf {
-    duel_state_dir().join("history")
+    clave_state_dir().join("history")
 }
 
 pub(crate) fn chats_dir() -> PathBuf {
-    duel_state_dir().join("chats")
+    clave_state_dir().join("chats")
 }
 
 pub(crate) fn config_path() -> PathBuf {
+    if let Ok(path) = env::var("CLAVE_CONFIG") {
+        return PathBuf::from(path);
+    }
+
     if let Ok(path) = env::var("DUEL_CONFIG") {
         return PathBuf::from(path);
     }
 
-    duel_state_dir().join("config")
+    clave_state_dir().join("config")
 }
 
 pub(crate) fn load_config(path: &Path) -> AppConfig {
@@ -177,7 +225,13 @@ pub(crate) fn load_config(path: &Path) -> AppConfig {
                 }
             }
             "work_dir" | "cwd" => config.work_dir = value.to_string(),
-            "out_dir" => config.out_dir = value.to_string(),
+            "out_dir" => {
+                config.out_dir = if value == ".ai-runs" {
+                    DEFAULT_ARTIFACT_DIR.to_string()
+                } else {
+                    value.to_string()
+                };
+            }
             "effort" => {
                 if let Some(index) = EFFORTS.iter().position(|effort| *effort == value) {
                     config.effort_index = index;
@@ -371,6 +425,7 @@ pub(crate) fn sanitize_chat_id(value: &str) -> String {
     value
         .trim()
         .trim_end_matches(&format!(".{}", CHAT_FILE_EXTENSION))
+        .trim_end_matches(&format!(".{}", LEGACY_CHAT_FILE_EXTENSION))
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
         .collect()
@@ -386,7 +441,7 @@ pub(crate) fn save_chat_transcript(
     }
 
     let mut file = fs::File::create(path)?;
-    writeln!(file, "# Duel Chat")?;
+    writeln!(file, "# Clave Chat")?;
     writeln!(file, "id={}", chat_id)?;
     writeln!(file, "created={}", unix_millis())?;
     writeln!(file, "---")?;
@@ -432,7 +487,12 @@ pub(crate) fn list_saved_chats(chats_dir: &Path, limit: usize) -> Vec<ChatSummar
     let mut chats = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(CHAT_FILE_EXTENSION))
+        .filter(|path| {
+            matches!(
+                path.extension().and_then(|ext| ext.to_str()),
+                Some(CHAT_FILE_EXTENSION) | Some(LEGACY_CHAT_FILE_EXTENSION)
+            )
+        })
         .filter_map(|path| chat_summary(&path))
         .collect::<Vec<_>>();
 

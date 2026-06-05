@@ -1,4 +1,4 @@
-# AI Orchestrator
+# Clave
 
 Personal/local Rust MVP for orchestrating multiple coding agents into one
 decision loop.
@@ -21,7 +21,7 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 
 - `ratatui` for layout, widgets, redraws, and resize-safe terminal rendering.
 - `crossterm` for raw input, alternate screen, key events, and terminal control.
-- `spec-duel` remains the orchestration engine used by the TUI.
+- `spec-clave` remains the orchestration engine used by the TUI.
 
 ## Project Layout
 
@@ -32,7 +32,7 @@ The interactive UI is a Rust TUI, not a shell-rendered screen:
 - `src/ui/` renders the TUI screens and reusable widgets: command palette, prompt, footer, loader, transcript, onboarding, welcome, settings, and effort picker.
 - `src/storage.rs` handles config, history, and saved chat files.
 - `src/auth.rs` checks and launches local CLI authentication.
-- `src/worker.rs` runs provider CLIs and the `spec-duel` engine.
+- `src/worker.rs` runs provider CLIs and the `spec-clave` engine.
 - `src/input.rs` contains cursor and word-boundary helpers.
 
 Current TUI shape:
@@ -40,13 +40,13 @@ Current TUI shape:
 - Claude Code-style welcome panel;
 - selectable accent themes: purple, cyan, rose, amber, and mono;
 - Russian interface by default;
-- first-run setup wizard saved to `~/.duel/config`;
-- persistent input history saved to `~/.duel/history`;
-- saved chats stored under `~/.duel/chats`;
+- first-run setup wizard saved to `~/.clave/config`;
+- persistent input history saved to `~/.clave/history`;
+- saved chats stored under `~/.clave/chats`;
 - startup opens the welcome screen instead of auto-restoring the last chat;
 - saved chats can be reopened with `/chats` and `/resume <id>`;
 - plain input sends a direct chat request to the selected direct-chat model;
-- `/plan <task>` runs the multi-agent `spec-duel` planning loop;
+- `/plan <task>` runs the multi-agent `spec-clave` planning loop;
 - final brief content is printed back into the chat after each `/plan` run;
 - bordered user messages in the transcript;
 - bottom composer;
@@ -54,7 +54,7 @@ Current TUI shape:
 - Codex `tokens used` output is parsed after direct chat responses when available;
 - slash-command palette appears below the input when it starts with `/`, including Russian-layout command normalization;
 - `/setup` reopens the setup wizard;
-- `/plan <task>` runs spec-duel planning;
+- `/plan <task>` runs Clave planning;
 - `/settings` opens the settings screen;
 - `/chat-model codex|claude` chooses who answers simple direct messages;
 - `/theme purple|cyan|rose|amber|mono` changes the accent palette;
@@ -65,9 +65,9 @@ Current TUI shape:
   run planning presets through the selected orchestration pairing;
 - `/advisor <question>` and `/btw <question>` run direct side-channel chats;
 - `/add-dir <directory>` sets the active working directory for direct chat and
-  planning runs; relative paths are resolved from the directory where `duel`
+  planning runs; relative paths are resolved from the directory where `clave`
   was launched;
-- `.ai-runs` artifacts are written to the launch working directory by default, not to the orchestrator install directory;
+- `.clave` artifacts are written to the launch working directory by default, not to the orchestrator install directory;
 - `/branch` creates a new saved chat from the current transcript;
 - `/new` starts a new saved chat;
 - `/chats` lists saved chats;
@@ -93,7 +93,7 @@ Current TUI shape:
 Open the interactive Rust TUI:
 
 ```bash
-duel
+clave
 ```
 
 On first launch the TUI asks for the default agent pairing:
@@ -109,18 +109,19 @@ for language, review rounds, effort, working directory, output directory, mode,
 direct chat provider, and theme.
 
 The local launcher can be symlinked or copied into a directory on your `PATH`
-as `duel`.
+as `clave`.
 
-The launcher preserves the directory where `duel` was invoked as
-`DUEL_LAUNCH_CWD`. Relative `work_dir` and `out_dir` values are resolved from
+The launcher preserves the directory where `clave` was invoked as
+`CLAVE_LAUNCH_CWD`. Relative `work_dir` and `out_dir` values are resolved from
 that launch directory, so project artifacts stay in the project you opened.
+Legacy `DUEL_*` environment variables still work as fallbacks.
 
 The launcher prefers the compiled Rust binary:
 
 ```bash
-cd duel-cli
+cd ai-orchestrator
 cargo build --release
-duel
+clave
 ```
 
 If Rust is not installed, direct one-shot task fallback still works through the
@@ -129,36 +130,36 @@ shell engine, but the interactive TUI will not open.
 Run a task directly:
 
 ```bash
-duel --codex-only "Build an affiliate program for a SaaS product"
+clave --codex-only "Build an affiliate program for a SaaS product"
 ```
 
 Use the shell engine directly only when Rust is not installed yet:
 
 ```bash
-./spec-duel "Build an affiliate program for a SaaS product"
+./spec-clave "Build an affiliate program for a SaaS product"
 ```
 
 If Claude Code subscription access is not enabled on the machine yet, use Codex
 for both roles:
 
 ```bash
-./spec-duel --codex-only "Build an affiliate program for a SaaS product"
+./spec-clave --codex-only "Build an affiliate program for a SaaS product"
 ```
 
 Or pipe a larger task:
 
 ```bash
-pbpaste | ./spec-duel
+pbpaste | ./spec-clave
 ```
 
 Useful shell engine flags:
 
 ```bash
-./spec-duel --rounds 3 --out .ai-runs "Build an affiliate program"
-./spec-duel --dry-run "Build an affiliate program"
-./spec-duel --architect claude --reviewer codex "Build an affiliate program"
-./spec-duel --codex-only --effort xhigh "Build an affiliate program"
-./spec-duel --architect claude --reviewer claude --effort max "Build an affiliate program"
+./spec-clave --rounds 3 --out .clave "Build an affiliate program"
+./spec-clave --dry-run "Build an affiliate program"
+./spec-clave --architect claude --reviewer codex "Build an affiliate program"
+./spec-clave --codex-only --effort xhigh "Build an affiliate program"
+./spec-clave --architect claude --reviewer claude --effort max "Build an affiliate program"
 ```
 
 Effort is passed to the real provider CLI, not treated as a cosmetic UI value:
@@ -183,11 +184,11 @@ pbpaste | cargo run --
 Useful flags:
 
 ```bash
-cargo run -- --rounds 3 --out .ai-runs "Build an affiliate program"
+cargo run -- --rounds 3 --out .clave "Build an affiliate program"
 cargo run -- --dry-run "Build an affiliate program"
 ```
 
-Each run creates a folder under `.ai-runs/` with the draft, review rounds, and
+Each run creates a folder under `.clave/` with the draft, review rounds, and
 final decision brief.
 
 ## Requirements
@@ -199,8 +200,8 @@ final decision brief.
 The CLI executable names can be overridden:
 
 ```bash
-AI_ORCHESTRATOR_CLAUDE=/path/to/claude \
-AI_ORCHESTRATOR_CODEX=/path/to/codex \
+CLAVE_CLAUDE=/path/to/claude \
+CLAVE_CODEX=/path/to/codex \
 cargo run -- "Plan a referral dashboard"
 ```
 

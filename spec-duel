@@ -2,27 +2,27 @@
 set -euo pipefail
 
 ROUNDS=2
-OUT_DIR=".ai-runs"
+OUT_DIR=".clave"
 CWD="$(pwd)"
 DRY_RUN=0
 TASK_PARTS=()
-EFFORT="${AI_ORCHESTRATOR_EFFORT:-high}"
+EFFORT="${CLAVE_EFFORT:-${AI_ORCHESTRATOR_EFFORT:-high}}"
 ARCHITECT_EFFORT=""
 REVIEWER_EFFORT=""
 
-ARCHITECT="${AI_ORCHESTRATOR_ARCHITECT:-claude}"
-REVIEWER="${AI_ORCHESTRATOR_REVIEWER:-codex}"
-CLAUDE_CMD="${AI_ORCHESTRATOR_CLAUDE:-claude}"
-CODEX_CMD="${AI_ORCHESTRATOR_CODEX:-codex}"
+ARCHITECT="${CLAVE_ARCHITECT:-${AI_ORCHESTRATOR_ARCHITECT:-claude}}"
+REVIEWER="${CLAVE_REVIEWER:-${AI_ORCHESTRATOR_REVIEWER:-codex}}"
+CLAUDE_CMD="${CLAVE_CLAUDE:-${AI_ORCHESTRATOR_CLAUDE:-claude}}"
+CODEX_CMD="${CLAVE_CODEX:-${AI_ORCHESTRATOR_CODEX:-codex}}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  spec-duel [options] <task...>
+  spec-clave [options] <task...>
 
 Options:
   --rounds <n>  Review loop limit, default 2
-  --out <dir>   Artifact directory, default .ai-runs
+  --out <dir>   Artifact directory, default .clave
   --cwd <dir>   Working directory for agent CLIs, default current dir
   --architect <claude|codex>
                 Agent used for drafting and revision, default claude
@@ -40,10 +40,10 @@ Options:
   -h, --help    Show this help
 
 Examples:
-  ./spec-duel "Build an affiliate program for a SaaS"
-  ./spec-duel --codex-only "Build an affiliate program for a SaaS"
-  pbpaste | ./spec-duel
-  ./spec-duel --rounds 3 --out .ai-runs "Plan a referral dashboard"
+  ./spec-clave "Build an affiliate program for a SaaS"
+  ./spec-clave --codex-only "Build an affiliate program for a SaaS"
+  pbpaste | ./spec-clave
+  ./spec-clave --rounds 3 --out .clave "Plan a referral dashboard"
 EOF
 }
 
@@ -162,11 +162,11 @@ case "$REVIEWER" in
 esac
 
 if [[ -z "$ARCHITECT_EFFORT" ]]; then
-  ARCHITECT_EFFORT="${AI_ORCHESTRATOR_ARCHITECT_EFFORT:-$EFFORT}"
+  ARCHITECT_EFFORT="${CLAVE_ARCHITECT_EFFORT:-${AI_ORCHESTRATOR_ARCHITECT_EFFORT:-$EFFORT}}"
 fi
 
 if [[ -z "$REVIEWER_EFFORT" ]]; then
-  REVIEWER_EFFORT="${AI_ORCHESTRATOR_REVIEWER_EFFORT:-$EFFORT}"
+  REVIEWER_EFFORT="${CLAVE_REVIEWER_EFFORT:-${AI_ORCHESTRATOR_REVIEWER_EFFORT:-$EFFORT}}"
 fi
 
 provider_supports_effort() {
@@ -217,14 +217,14 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
   fi
 fi
 
-RUN_DIR="$OUT_DIR/spec-duel-$(date +%s)"
+RUN_DIR="$OUT_DIR/spec-clave-$(date +%s)"
 if ! mkdir -p "$RUN_DIR"; then
   echo "error: cannot create run directory: $RUN_DIR" >&2
   exit 1
 fi
 printf '%s\n' "$TASK" > "$RUN_DIR/00-task.md"
 
-echo "AI Orchestrator run: $RUN_DIR"
+echo "Clave run: $RUN_DIR"
 echo "Round limit: $ROUNDS"
 echo "Architect: $ARCHITECT"
 echo "Reviewer: $REVIEWER"

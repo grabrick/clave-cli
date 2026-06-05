@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  if [[ "$SOURCE" != /* ]]; then
+    SOURCE="$SOURCE_DIR/$SOURCE"
+  fi
+done
+
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+LAUNCH_CWD="$(pwd -P)"
+RELEASE_BIN="$SCRIPT_DIR/target/release/clave"
+DEBUG_BIN="$SCRIPT_DIR/target/debug/clave"
+ENGINE="$SCRIPT_DIR/spec-clave"
+if [[ ! -x "$ENGINE" ]]; then
+  ENGINE="$SCRIPT_DIR/spec-duel"
+fi
+
+export CLAVE_ENGINE="${CLAVE_ENGINE:-${DUEL_ENGINE:-$ENGINE}}"
+export DUEL_ENGINE="${DUEL_ENGINE:-$CLAVE_ENGINE}"
+export CLAVE_LAUNCH_CWD="${CLAVE_LAUNCH_CWD:-${DUEL_LAUNCH_CWD:-$LAUNCH_CWD}}"
+export DUEL_LAUNCH_CWD="${DUEL_LAUNCH_CWD:-$CLAVE_LAUNCH_CWD}"
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  printf '%s\n' 'clave'
+  printf '\n'
+  printf '%s\n' 'Usage:'
+  printf '%s\n' '  clave                         Open the Rust TUI'
+  printf '%s\n' '  clave --codex-only "<task>"   Run one task through the engine'
+  printf '%s\n' '  clave --help                  Show this help'
+  printf '\n'
+  printf '%s\n' 'Build the TUI:'
+  printf '  cd "%s"\n' "$SCRIPT_DIR"
+  printf '%s\n' '  cargo build --release'
+  exit 0
+fi
+
+if [[ -x "$RELEASE_BIN" ]]; then
+  cd "$SCRIPT_DIR"
+  exec "$RELEASE_BIN" "$@"
+fi
+
+if [[ -x "$DEBUG_BIN" ]]; then
+  cd "$SCRIPT_DIR"
+  exec "$DEBUG_BIN" "$@"
+fi
+
+if command -v cargo >/dev/null 2>&1; then
+  cd "$SCRIPT_DIR"
+  exec cargo run --quiet -- "$@"
+fi
+
+if [[ $# -gt 0 && -x "$ENGINE" ]]; then
+  echo "clave: Rust TUI is not built and cargo is not installed; running direct engine fallback." >&2
+  cd "$SCRIPT_DIR"
+  exec "$ENGINE" "$@"
+fi
+
+{
+  printf '%s\n' 'clave: Rust TUI is not available yet.'
+  printf '\n'
+  printf '%s\n' 'Install Rust/Cargo, then run:'
+  printf '\n'
+  printf '  cd "%s"\n' "$SCRIPT_DIR"
+  printf '%s\n' '  cargo build --release'
+  printf '%s\n' '  clave'
+  printf '\n'
+  printf '%s\n' 'Direct task fallback still works without the TUI:'
+  printf '\n'
+  printf '%s\n' '  clave --codex-only "Plan an affiliate program"'
+} >&2
+
+exit 1

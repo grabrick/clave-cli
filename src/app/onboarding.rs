@@ -35,7 +35,7 @@ impl Onboarding {
             claude_authenticated: claude.authenticated,
             codex_status: codex.status,
             claude_status: claude.status,
-            message: "Выбери, какие модели будут работать в Duel.".to_string(),
+            message: "Выбери, какие модели будут работать в Clave.".to_string(),
         }
     }
 

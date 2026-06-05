@@ -27,7 +27,7 @@ impl Default for AppConfig {
             lang: Language::Ru,
             rounds: 2,
             work_dir: ".".to_string(),
-            out_dir: ".ai-runs".to_string(),
+            out_dir: DEFAULT_ARTIFACT_DIR.to_string(),
             effort_index: 3,
             codex_effort_index: 3,
             claude_effort_index: 4,

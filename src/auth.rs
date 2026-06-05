@@ -144,7 +144,7 @@ pub(crate) fn run_external_command(
 
     println!();
     println!(
-        "Duel: running {} {}",
+        "Clave: running {} {}",
         command.program,
         command.args.join(" ")
     );
@@ -154,13 +154,13 @@ pub(crate) fn run_external_command(
     let code = match result {
         Ok(status) => status.code().unwrap_or(1),
         Err(err) => {
-            println!("Duel: failed to start command: {err}");
+            println!("Clave: failed to start command: {err}");
             1
         }
     };
 
     println!();
-    println!("Duel: press Enter to return...");
+    println!("Clave: press Enter to return...");
     let mut wait = String::new();
     let _ = io::stdin().read_line(&mut wait);
 
