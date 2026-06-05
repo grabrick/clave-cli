@@ -1,6 +1,3 @@
-//! Учёт расхода моделей. Часть полей/методов задействуется с Фазы 3 (/cost, футер).
-#![allow(dead_code)]
-
 use crate::prelude::*;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
@@ -8,12 +5,13 @@ pub(crate) struct RunUsage {
     pub(crate) input: u64,
     pub(crate) output: u64,
     pub(crate) cache_read: u64,
+    pub(crate) cache_creation: u64,
     pub(crate) cost_usd: f64,
 }
 
 impl RunUsage {
     pub(crate) fn tokens(self) -> u64 {
-        self.input + self.output + self.cache_read
+        self.input + self.output + self.cache_read + self.cache_creation
     }
 }
 
@@ -47,6 +45,7 @@ impl SessionUsage {
         slot.total.input += run.input;
         slot.total.output += run.output;
         slot.total.cache_read += run.cache_read;
+        slot.total.cache_creation += run.cache_creation;
         slot.total.cost_usd += run.cost_usd;
         slot.requests += 1;
     }
@@ -73,6 +72,7 @@ mod tests {
                 input: 100,
                 output: 50,
                 cache_read: 10,
+                cache_creation: 7,
                 cost_usd: 0.02,
             },
         );
@@ -82,6 +82,7 @@ mod tests {
                 input: 200,
                 output: 30,
                 cache_read: 0,
+                cache_creation: 0,
                 cost_usd: 0.03,
             },
         );
@@ -91,6 +92,7 @@ mod tests {
                 input: 80,
                 output: 20,
                 cache_read: 0,
+                cache_creation: 0,
                 cost_usd: 0.0,
             },
         );
@@ -99,8 +101,9 @@ mod tests {
         assert_eq!(s.codex.requests, 1);
         assert_eq!(s.claude.total.input, 300);
         assert_eq!(s.claude.total.output, 80);
+        assert_eq!(s.claude.total.cache_creation, 7);
         assert!((s.claude.total.cost_usd - 0.05).abs() < 1e-9);
-        assert_eq!(s.total_tokens(), 390 + 100);
+        assert_eq!(s.total_tokens(), 397 + 100);
         assert!((s.total_cost_usd() - 0.05).abs() < 1e-9);
     }
 }

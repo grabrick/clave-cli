@@ -65,6 +65,13 @@ pub(crate) fn footer_right_segments(app: &App) -> Vec<String> {
     ));
     segments.push(format!("theme {}", app.theme.as_str()));
     segments.push(format!("effort {}", app.compact_effort_summary()));
+    if app.usage.total_tokens() > 0 {
+        segments.push(format!(
+            "usage {} · ${:.3}",
+            format_token_count(app.usage.total_tokens() as usize),
+            app.usage.total_cost_usd()
+        ));
+    }
     segments
 }
 

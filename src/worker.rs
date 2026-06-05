@@ -217,6 +217,10 @@ pub(crate) fn parse_claude_response(stdout: &str) -> ChatResponse {
                     .get("cache_read_input_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0),
+                cache_creation: u
+                    .get("cache_creation_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
                 cost_usd: value
                     .get("total_cost_usd")
                     .and_then(|v| v.as_f64())
@@ -256,6 +260,7 @@ fn find_token_usage(value: &serde_json::Value) -> Option<RunUsage> {
             input,
             output,
             cache_read,
+            cache_creation: 0,
             cost_usd: 0.0,
         });
     }
@@ -412,7 +417,7 @@ mod tests {
 
     #[test]
     fn parses_claude_json_with_usage() {
-        let raw = r#"{"type":"result","is_error":false,"result":"Привет!","total_cost_usd":0.0123,"usage":{"input_tokens":120,"output_tokens":40,"cache_read_input_tokens":5}}"#;
+        let raw = r#"{"type":"result","is_error":false,"result":"Привет!","total_cost_usd":0.0123,"usage":{"input_tokens":120,"output_tokens":40,"cache_read_input_tokens":5,"cache_creation_input_tokens":9}}"#;
         let parsed = parse_claude_response(raw);
         assert_eq!(parsed.text, "Привет!");
         assert!(!parsed.is_error);
@@ -420,6 +425,7 @@ mod tests {
         assert_eq!(usage.input, 120);
         assert_eq!(usage.output, 40);
         assert_eq!(usage.cache_read, 5);
+        assert_eq!(usage.cache_creation, 9);
         assert!((usage.cost_usd - 0.0123).abs() < 1e-9);
     }
 

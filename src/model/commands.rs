@@ -84,8 +84,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         usage: "/plan <task>",
         insert: "/plan ",
-        description_en: "Run the multi-agent spec-duel planning loop",
-        description_ru: "Запустить multi-agent планирование spec-duel",
+        description_en: "Run the multi-agent Clave planning loop",
+        description_ru: "Запустить multi-agent планирование Clave",
     },
     CommandSpec {
         usage: "/clear",
@@ -208,6 +208,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Показать состояние сессии",
     },
     CommandSpec {
+        usage: "/cost",
+        insert: "/cost",
+        description_en: "Show model usage and cost",
+        description_ru: "Показать расход моделей и стоимость",
+    },
+    CommandSpec {
         usage: "/setup",
         insert: "/setup",
         description_en: "Open first-run setup again",
@@ -216,8 +222,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         usage: "/quit",
         insert: "/quit",
-        description_en: "Exit Duel",
-        description_ru: "Выйти из Duel",
+        description_en: "Exit Clave",
+        description_ru: "Выйти из Clave",
     },
 ];
 
@@ -280,7 +286,7 @@ fn is_known_command_token(token: &str) -> bool {
     COMMANDS
         .iter()
         .any(|command| command.command_token() == token)
-        || matches!(token, "/language" | "/duel" | "/auth" | "/exit")
+        || matches!(token, "/language" | "/clave" | "/duel" | "/auth" | "/exit")
 }
 
 fn normalize_command_rest(command: &str, rest: &str) -> String {

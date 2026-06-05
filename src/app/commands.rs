@@ -251,6 +251,7 @@ impl App {
                 }
             }
             "/status" => self.show_status(),
+            "/cost" => self.show_cost(),
             "/effort" => {
                 self.push_command_invocation(line);
                 self.effort_original = Some(self.effort_snapshot());
@@ -354,6 +355,71 @@ impl App {
         self.push_status_row(self.lang.choose("Чат", "Chat"), self.chat_id.clone());
     }
 
+    fn show_cost(&mut self) {
+        self.status = self.lang.choose("расход", "cost").to_string();
+        self.push_system(self.lang.choose("⏺ Расход сессии", "⏺ Session cost"));
+
+        let claude = self.usage.claude;
+        let codex = self.usage.codex;
+        let total_tokens = self.usage.total_tokens();
+        let total_cost = self.usage.total_cost_usd();
+        let minutes = self.usage.started_at.elapsed().as_secs() / 60;
+
+        if claude.requests == 0 && codex.requests == 0 {
+            self.push_status_row(
+                self.lang.choose("Данные", "Data"),
+                self.lang
+                    .choose("пока нет запросов", "no requests yet")
+                    .to_string(),
+            );
+            return;
+        }
+
+        let req = self.lang.choose("запр.", "req");
+        if claude.requests > 0 {
+            self.push_status_row(
+                "Claude",
+                format!(
+                    "{} {req} · {} in · {} out · ${:.4}",
+                    claude.requests,
+                    format_token_count(claude.total.input as usize),
+                    format_token_count(claude.total.output as usize),
+                    claude.total.cost_usd,
+                ),
+            );
+        }
+        if codex.requests > 0 {
+            self.push_status_row(
+                "Codex",
+                format!(
+                    "{} {req} · {} tok · $—",
+                    codex.requests,
+                    format_token_count(codex.total.tokens() as usize),
+                ),
+            );
+        }
+        self.push_status_row(
+            self.lang.choose("Итого", "Total"),
+            format!(
+                "≈ {} {} · ${:.4}",
+                format_token_count(total_tokens as usize),
+                self.lang.choose("токенов", "tokens"),
+                total_cost,
+            ),
+        );
+        self.push_status_row(
+            self.lang.choose("Сессия", "Session"),
+            format!(
+                "{minutes} {} · {}",
+                self.lang.choose("мин", "min"),
+                self.lang.choose(
+                    "read-only chat, инструменты отключены",
+                    "read-only chat, tools disabled"
+                ),
+            ),
+        );
+    }
+
     fn push_status_row(&mut self, label: &str, value: String) {
         self.push_system(format!("  ⎿ {label}: {value}"));
     }
@@ -392,6 +458,7 @@ impl App {
                 | "/rounds"
                 | "/out"
                 | "/status"
+                | "/cost"
                 | "/setup"
                 | "/quit"
         )
