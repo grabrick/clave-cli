@@ -435,6 +435,479 @@ pub(crate) fn run_chat_provider(
     }
 }
 
+pub(crate) struct TandemStep {
+    pub(crate) text: String,
+    pub(crate) code: i32,
+    pub(crate) usage: Option<RunUsage>,
+}
+
+pub(crate) enum TandemResult {
+    Completed(i32, Option<RunUsage>),
+    Cancelled,
+}
+
+/// Лента тандема, передаётся целиком в каждый промпт (P6: усечение при росте).
+struct TandemTranscript {
+    entries: Vec<String>,
+}
+
+impl TandemTranscript {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, who: &str, phase: &str, text: &str) {
+        self.entries
+            .push(format!("[{who} · {phase}]\n{}", text.trim()));
+    }
+
+    fn render(&self) -> String {
+        let full = self.entries.join("\n\n");
+        if full.len() <= 12_000 || self.entries.len() <= 4 {
+            return full;
+        }
+        // P6: оставляем первую запись + хвост (последние 3)
+        let head = &self.entries[0];
+        let tail = &self.entries[self.entries.len() - 3..];
+        format!(
+            "{head}\n\n…[ранние раунды усечены]…\n\n{}",
+            tail.join("\n\n")
+        )
+    }
+}
+
+/// Один вызов провайдера для тандема. `cancel_rx` по ссылке — чтобы переиспользовать
+/// на серии шагов. None = отменён в процессе. Активность инструментов стримится в `tx`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_provider_once(
+    provider: &'static str,
+    effort: &str,
+    prompt: &str,
+    work_dir: &Path,
+    access: RunAccess,
+    lang: Language,
+    tx: &Sender<WorkerEvent>,
+    cancel_rx: &Receiver<()>,
+) -> io::Result<Option<TandemStep>> {
+    let codex_out_file = env::temp_dir().join(format!(
+        "clave-tandem-{}-{}.txt",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let mut command = if provider == "claude" {
+        let program = env::var("CLAVE_CLAUDE")
+            .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
+            .unwrap_or_else(|_| "claude".to_string());
+        let mut command = Command::new(program);
+        command.args(claude_chat_args(effort, access, prompt));
+        command
+    } else {
+        let program = env::var("CLAVE_CODEX")
+            .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
+            .unwrap_or_else(|_| "codex".to_string());
+        let mut command = Command::new(program);
+        let codex_out = codex_out_file.to_string_lossy().into_owned();
+        command.args([
+            "exec",
+            "--json",
+            "-o",
+            &codex_out,
+            "-c",
+            &format!("model_reasoning_effort=\"{}\"", effort),
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--color",
+            "never",
+            "-s",
+            access.codex_sandbox(),
+            prompt,
+        ]);
+        command
+    };
+
+    let mut child = command
+        .current_dir(work_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout_handle = child.stdout.take().map(|out| {
+        if provider == "claude" {
+            spawn_claude_activity_reader(out, tx.clone(), lang)
+        } else {
+            spawn_codex_activity_reader(out, tx.clone(), lang)
+        }
+    });
+    let stderr_handle = child.stderr.take().map(spawn_capture_reader);
+
+    loop {
+        if cancel_rx.try_recv().is_ok() {
+            let _ = child.kill();
+            let _ = child.wait();
+            if let Some(handle) = stdout_handle {
+                let _ = handle.join();
+            }
+            if let Some(handle) = stderr_handle {
+                let _ = handle.join();
+            }
+            let _ = fs::remove_file(&codex_out_file);
+            return Ok(None);
+        }
+
+        match child.try_wait()? {
+            Some(status) => {
+                let stdout = stdout_handle
+                    .map(|handle| handle.join().unwrap_or_default())
+                    .unwrap_or_default();
+                let _ = stderr_handle.map(|handle| handle.join().unwrap_or_default());
+
+                let (text, usage, is_error) = if provider == "claude" {
+                    let parsed = parse_claude_response(&stdout);
+                    (parsed.text, parsed.usage, parsed.is_error)
+                } else {
+                    let text = fs::read_to_string(&codex_out_file).unwrap_or_default();
+                    let usage = parse_codex_usage(&stdout);
+                    let _ = fs::remove_file(&codex_out_file);
+                    (text, usage, false)
+                };
+
+                let mut code = status.code().unwrap_or(1);
+                if is_error && code == 0 {
+                    code = 1;
+                }
+                return Ok(Some(TandemStep { text, code, usage }));
+            }
+            None => thread::sleep(Duration::from_millis(80)),
+        }
+    }
+}
+
+fn tandem_accumulate(total: &mut RunUsage, usage: &Option<RunUsage>) {
+    if let Some(u) = usage {
+        total.input += u.input;
+        total.output += u.output;
+        total.cache_read += u.cache_read;
+        total.cache_creation += u.cache_creation;
+        total.cost_usd += u.cost_usd;
+    }
+}
+
+fn emit_tandem_step(tx: &Sender<WorkerEvent>, marker: &str, who: &str, phase: &str, text: &str) {
+    let _ = tx.send(WorkerEvent::ChatLine(format!("{marker} {who} · {phase}")));
+    for line in text.trim().lines() {
+        let _ = tx.send(WorkerEvent::ChatLine(line.to_string()));
+    }
+    let _ = tx.send(WorkerEvent::ChatLine(String::new()));
+}
+
+fn tandem_notice(tx: &Sender<WorkerEvent>, text: String) {
+    let _ = tx.send(WorkerEvent::Line(text));
+}
+
+fn opt_usage(total: RunUsage) -> Option<RunUsage> {
+    if total == RunUsage::default() {
+        None
+    } else {
+        Some(total)
+    }
+}
+
+/// Оркестратор тандема: дебаты до консенсуса → исполнение → ревью → правка →
+/// подтверждение. Серия вызовов `run_provider_once`; стрим шагов в чат.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_tandem(
+    executor: &'static str,
+    critic: &'static str,
+    executor_effort: &str,
+    critic_effort: &str,
+    task: &str,
+    rounds: usize,
+    work_dir: &Path,
+    cancel_rx: Receiver<()>,
+    tx: Sender<WorkerEvent>,
+    lang: Language,
+) -> io::Result<TandemResult> {
+    let mut transcript = TandemTranscript::new();
+    let mut total = RunUsage::default();
+    let executor_name = provider_display(executor, lang);
+    let critic_name = provider_display(critic, lang);
+    let exec_role = lang.choose("Исполнитель", "Executor");
+    let crit_role = lang.choose("Критик", "Critic");
+
+    // P5: предупреждение о возможных изменённых файлах при прерывании после исполнения.
+    let dirty_notice = |tx: &Sender<WorkerEvent>| {
+        tandem_notice(
+            tx,
+            lang.choose(
+                "⚠ Файлы были изменены до прерывания — проверь рабочую директорию.",
+                "⚠ Files were modified before interruption — check the working directory.",
+            )
+            .to_string(),
+        );
+    };
+
+    // ФАЗА ДЕБАТОВ
+    let mut consensus = false;
+    for round in 1..=rounds.max(1) {
+        let propose = tandem_propose_prompt(task, &transcript.render(), lang);
+        let step = match run_provider_once(
+            executor,
+            executor_effort,
+            &propose,
+            work_dir,
+            RunAccess::PlanReadonly,
+            lang,
+            &tx,
+            &cancel_rx,
+        )? {
+            Some(s) => s,
+            None => return Ok(TandemResult::Cancelled),
+        };
+        tandem_accumulate(&mut total, &step.usage);
+        if step.code != 0 {
+            tandem_notice(
+                &tx,
+                format!(
+                    "{} {}",
+                    executor_name,
+                    lang.choose("вернул ошибку", "returned an error")
+                ),
+            );
+            return Ok(TandemResult::Completed(step.code, opt_usage(total)));
+        }
+        emit_tandem_step(
+            &tx,
+            "🅐",
+            executor_name,
+            &format!("{} {round} · {}", lang.choose("раунд", "round"), exec_role),
+            &step.text,
+        );
+        transcript.push(
+            exec_role,
+            &format!(
+                "{} {round}",
+                lang.choose("предложение, раунд", "proposal, round")
+            ),
+            &step.text,
+        );
+
+        let challenge = tandem_challenge_prompt(task, &transcript.render(), lang);
+        let step = match run_provider_once(
+            critic,
+            critic_effort,
+            &challenge,
+            work_dir,
+            RunAccess::PlanReadonly,
+            lang,
+            &tx,
+            &cancel_rx,
+        )? {
+            Some(s) => s,
+            None => return Ok(TandemResult::Cancelled),
+        };
+        tandem_accumulate(&mut total, &step.usage);
+        if step.code != 0 {
+            tandem_notice(
+                &tx,
+                format!(
+                    "{} {}",
+                    critic_name,
+                    lang.choose("вернул ошибку", "returned an error")
+                ),
+            );
+            return Ok(TandemResult::Completed(step.code, opt_usage(total)));
+        }
+        emit_tandem_step(
+            &tx,
+            "🅒",
+            critic_name,
+            &format!("{} {round} · {}", lang.choose("раунд", "round"), crit_role),
+            &step.text,
+        );
+        transcript.push(
+            crit_role,
+            &format!("{} {round}", lang.choose("критика, раунд", "critique, round")),
+            &step.text,
+        );
+
+        if parse_tandem_signal(&step.text) {
+            consensus = true;
+            break;
+        }
+    }
+    if !consensus {
+        tandem_notice(
+            &tx,
+            lang.choose(
+                "⚠ Консенсус не достигнут за раунды — исполняю последнюю версию.",
+                "⚠ No consensus within the rounds — executing the latest proposal.",
+            )
+            .to_string(),
+        );
+    }
+
+    // ФАЗА ИСПОЛНЕНИЯ
+    if cancel_rx.try_recv().is_ok() {
+        return Ok(TandemResult::Cancelled);
+    }
+    let execute = tandem_execute_prompt(task, &transcript.render(), lang);
+    let step = match run_provider_once(
+        executor,
+        executor_effort,
+        &execute,
+        work_dir,
+        RunAccess::PlanExecute,
+        lang,
+        &tx,
+        &cancel_rx,
+    )? {
+        Some(s) => s,
+        None => {
+            dirty_notice(&tx);
+            return Ok(TandemResult::Cancelled);
+        }
+    };
+    tandem_accumulate(&mut total, &step.usage);
+    if step.code != 0 {
+        dirty_notice(&tx);
+        tandem_notice(
+            &tx,
+            format!(
+                "{} {}",
+                executor_name,
+                lang.choose("вернул ошибку", "returned an error")
+            ),
+        );
+        return Ok(TandemResult::Completed(step.code, opt_usage(total)));
+    }
+    emit_tandem_step(
+        &tx,
+        "🅐",
+        executor_name,
+        &format!("{} · {}", lang.choose("исполнение", "execution"), exec_role),
+        &step.text,
+    );
+    transcript.push(exec_role, lang.choose("исполнение", "execution"), &step.text);
+
+    // ФАЗА РЕВЬЮ
+    let review = tandem_review_prompt(task, &transcript.render(), lang);
+    let step = match run_provider_once(
+        critic,
+        critic_effort,
+        &review,
+        work_dir,
+        RunAccess::PlanReadonly,
+        lang,
+        &tx,
+        &cancel_rx,
+    )? {
+        Some(s) => s,
+        None => {
+            dirty_notice(&tx);
+            return Ok(TandemResult::Cancelled);
+        }
+    };
+    tandem_accumulate(&mut total, &step.usage);
+    emit_tandem_step(
+        &tx,
+        "🅒",
+        critic_name,
+        &format!("{} · {}", lang.choose("ревью", "review"), crit_role),
+        &step.text,
+    );
+    transcript.push(crit_role, lang.choose("ревью", "review"), &step.text);
+    let review_ok = step.code == 0 && parse_tandem_signal(&step.text);
+
+    // ФИНАЛЬНАЯ ПРАВКА + ПОДТВЕРЖДЕНИЕ (P4)
+    if !review_ok {
+        let review_text = step.text.clone();
+        if cancel_rx.try_recv().is_ok() {
+            dirty_notice(&tx);
+            return Ok(TandemResult::Cancelled);
+        }
+        let fix = tandem_fix_prompt(task, &transcript.render(), &review_text, lang);
+        let step = match run_provider_once(
+            executor,
+            executor_effort,
+            &fix,
+            work_dir,
+            RunAccess::PlanExecute,
+            lang,
+            &tx,
+            &cancel_rx,
+        )? {
+            Some(s) => s,
+            None => {
+                dirty_notice(&tx);
+                return Ok(TandemResult::Cancelled);
+            }
+        };
+        tandem_accumulate(&mut total, &step.usage);
+        emit_tandem_step(
+            &tx,
+            "🅐",
+            executor_name,
+            &format!(
+                "{} · {}",
+                lang.choose("финальная правка", "final fix"),
+                exec_role
+            ),
+            &step.text,
+        );
+        transcript.push(
+            exec_role,
+            lang.choose("финальная правка", "final fix"),
+            &step.text,
+        );
+
+        let confirm = tandem_confirm_prompt(task, &transcript.render(), lang);
+        let step = match run_provider_once(
+            critic,
+            critic_effort,
+            &confirm,
+            work_dir,
+            RunAccess::PlanReadonly,
+            lang,
+            &tx,
+            &cancel_rx,
+        )? {
+            Some(s) => s,
+            None => {
+                dirty_notice(&tx);
+                return Ok(TandemResult::Cancelled);
+            }
+        };
+        tandem_accumulate(&mut total, &step.usage);
+        emit_tandem_step(
+            &tx,
+            "🅒",
+            critic_name,
+            &format!(
+                "{} · {}",
+                lang.choose("подтверждение", "confirmation"),
+                crit_role
+            ),
+            &step.text,
+        );
+        if !parse_tandem_signal(&step.text) {
+            tandem_notice(
+                &tx,
+                lang.choose(
+                    "⚠ Остались замечания критика.",
+                    "⚠ The critic still has unresolved issues.",
+                )
+                .to_string(),
+            );
+        }
+    }
+
+    Ok(TandemResult::Completed(0, opt_usage(total)))
+}
+
 pub(crate) struct ChatResponse {
     pub(crate) text: String,
     pub(crate) usage: Option<RunUsage>,
@@ -976,6 +1449,17 @@ mod tests {
 
         let fix = tandem_fix_prompt("do x", "", "fix the bug", Language::En);
         assert!(fix.contains("fix the bug"));
+    }
+
+    #[test]
+    fn tandem_transcript_renders_and_truncates() {
+        let mut t = TandemTranscript::new();
+        t.push("Executor", "proposal 1", "short");
+        assert!(t.render().contains("short"));
+        for i in 0..60 {
+            t.push("Critic", "round", &format!("entry {i} {}", "y".repeat(400)));
+        }
+        assert!(t.render().contains("усечены"));
     }
 
     #[test]
