@@ -1105,7 +1105,9 @@ fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<Str
         .and_then(|i| i.get("command"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let pattern = input.and_then(|i| i.get("pattern")).and_then(|v| v.as_str());
+    let pattern = input
+        .and_then(|i| i.get("pattern"))
+        .and_then(|v| v.as_str());
     let summary = match name {
         "Read" | "NotebookRead" => {
             format!(
@@ -1132,7 +1134,11 @@ fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<Str
             truncate_chars(command, 50)
         ),
         "Grep" => match pattern {
-            Some(p) => format!("{} {}", lang.choose("Ищу", "Searching"), truncate_chars(p, 40)),
+            Some(p) => format!(
+                "{} {}",
+                lang.choose("Ищу", "Searching"),
+                truncate_chars(p, 40)
+            ),
             None => lang.choose("Ищу по коду", "Searching code").to_string(),
         },
         "Glob" => match pattern {

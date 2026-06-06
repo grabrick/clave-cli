@@ -6,11 +6,34 @@ impl App {
     }
 
     pub(crate) fn start_chat(&mut self, message: String) {
+        // Во время выполнения сообщение не теряется, а встаёт в очередь и
+        // запускается после завершения текущего рана (см. process_pending_messages).
+        if self.running {
+            let preview = truncate_chars(&message, 80);
+            self.pending_messages.push_back(message);
+            self.push_system(format!(
+                "⧖ {}: {preview}",
+                self.lang.choose("в очереди", "queued")
+            ));
+            return;
+        }
+
         self.last_chat_message = Some(message.clone());
         match self.chat_mode {
             ChatMode::Plan => self.start_plan(message),
             ChatMode::Tandem => self.start_tandem(message),
             _ => self.start_chat_with_prompt(message.clone(), message),
+        }
+    }
+
+    /// Запускает следующее сообщение из очереди, если ничего не выполняется и не
+    /// открыт гейт плана. Вызывается после завершения рана.
+    pub(crate) fn process_pending_messages(&mut self) {
+        if self.running || self.plan_gate_active() {
+            return;
+        }
+        if let Some(next) = self.pending_messages.pop_front() {
+            self.start_chat(next);
         }
     }
 

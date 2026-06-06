@@ -98,6 +98,7 @@ impl App {
                         self.lang
                             .choose("Clave завершился с кодом", "Clave finished with exit code")
                     ));
+                    self.process_pending_messages();
                 }
                 WorkerEvent::ChatDone(provider, code, usage) => {
                     if let Some(usage) = usage {
@@ -122,6 +123,7 @@ impl App {
                             code
                         ));
                     }
+                    self.process_pending_messages();
                 }
                 WorkerEvent::PlanReady(provider, plan, code, usage) => {
                     if let Some(usage) = usage {
@@ -159,6 +161,8 @@ impl App {
                         self.lang
                             .choose("⏹ Выполнение остановлено.", "⏹ Run stopped."),
                     );
+                    // Отмена очищает очередь — пользователь нажал стоп.
+                    self.pending_messages.clear();
                 }
                 WorkerEvent::Failed(message) => {
                     self.running = false;
@@ -168,6 +172,7 @@ impl App {
                     self.cancel_tx = None;
                     self.status = self.lang.choose("ошибка", "failed").to_string();
                     self.push_system(message);
+                    self.process_pending_messages();
                 }
             }
         }
