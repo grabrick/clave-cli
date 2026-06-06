@@ -180,22 +180,26 @@ impl App {
 
 impl App {
     pub(crate) fn push_system(&mut self, line: impl Into<String>) {
-        self.scroll_offset = 0;
         let line = line.into();
         if let Err(err) = append_chat_line(&self.chat_path, &line) {
             self.status = self.lang.choose("ошибка чата", "chat error").to_string();
-            self.transcript.push(format!(
+            let err_line = format!(
                 "{} {}",
                 self.lang
                     .choose("Не удалось сохранить чат:", "Failed to save chat:"),
                 err
-            ));
+            );
+            self.transcript.push(err_line.clone());
+            self.pending_output.push_back(err_line);
         }
 
-        self.transcript.push(line);
+        self.transcript.push(line.clone());
         if self.transcript.len() > MAX_TRANSCRIPT_LINES {
             let remove_count = self.transcript.len() - MAX_TRANSCRIPT_LINES;
             self.transcript.drain(0..remove_count);
         }
+        // Append-only история: строка уходит в обычный буфер терминала через
+        // insert_before (см. runtime::flush_history); внутри истории не мутируется.
+        self.pending_output.push_back(line);
     }
 }

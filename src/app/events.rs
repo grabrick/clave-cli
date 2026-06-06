@@ -80,7 +80,7 @@ impl App {
                         self.push_system(line);
                     }
                 }
-                WorkerEvent::ChatLine(line) => self.enqueue_reveal(line),
+                WorkerEvent::ChatLine(line) => self.push_system(line),
                 WorkerEvent::Activity(line) => self.push_run_activity(line),
                 WorkerEvent::Done(code) => {
                     self.running = false;

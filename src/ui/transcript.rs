@@ -31,6 +31,18 @@ pub(crate) fn loader_tail_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
+/// Стилизует и переносит одну строку истории в готовые `Line` для `insert_before`.
+/// `state` ведёт code-block между строками (история append-only — state монотонен).
+pub(crate) fn history_line_render(
+    line: &str,
+    lang: Language,
+    width: u16,
+    theme: Theme,
+    state: &mut TranscriptRenderState,
+) -> Vec<Line<'static>> {
+    transcript_entry_lines_with_state(line, lang, width, theme, state)
+}
+
 /// Окно отрисовки транскрипта: (start, end) в виртуальном теле длиной `total`.
 /// scroll_offset=0 показывает низ (свежие строки), рост offset листает вверх до
 /// начала. Без «минус одна строка» — влезающий чат виден целиком.

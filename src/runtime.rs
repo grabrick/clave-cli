@@ -38,36 +38,50 @@ pub(crate) fn run_engine_direct(args: Vec<String>) -> AnyResult<()> {
 
 pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    enable_alt_scroll(&mut stdout)?;
-
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    let result = run_app(&mut terminal);
-
-    disable_raw_mode()?;
-    let _ = disable_alt_scroll(terminal.backend_mut());
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
-
-    result
+    let _guard = TerminalGuard::new()?;
+    let mut app = App::new();
+    if app.transcript.is_empty() {
+        app.pending_output.push_back(welcome_banner(app.lang));
+    }
+    let width = terminal_width();
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(desired_viewport_height(&app, width)),
+        },
+    )?;
+    run_app(&mut terminal, &mut app)
 }
 
-/// Alternate Scroll Mode (`?1007`): в alt-screen терминал отправляет колесо как
-/// стрелки ↑/↓ и НЕ включает mouse reporting. Любой mouse reporting (даже
-/// `?1000`) перехватывает кнопку → ломает нативное выделение; здесь его нет,
-/// поэтому выделение мышью работает обычным drag, а колесо приходит как Up/Down
-/// и скроллит чат. Так делают less/vim.
-fn enable_alt_scroll<W: io::Write>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?1007h")?;
-    out.flush()
+/// RAII: гарантированно снимает raw mode и сбрасывает терминал (alt-screen, mouse —
+/// на случай, если modal их включал) при любом выходе или панике (инвариант 6).
+pub(crate) struct TerminalGuard;
+
+impl TerminalGuard {
+    pub(crate) fn new() -> io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self)
+    }
 }
 
-fn disable_alt_scroll<W: io::Write>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?1007l")?;
-    out.flush()
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+    }
+}
+
+fn terminal_width() -> u16 {
+    crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80)
+}
+
+fn welcome_banner(lang: Language) -> String {
+    lang.choose(
+        "✦ clave готов. Введи задачу или /help.",
+        "✦ clave ready. Type a task or /help.",
+    )
+    .to_string()
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).
@@ -79,69 +93,155 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
     }
 }
 
-pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> AnyResult<()> {
-    let mut app = App::new();
+/// Печатает накопленные строки истории выше живого viewport через `insert_before`
+/// (append-only, инвариант 1), со стилизацией. Скролл/выделение — нативные.
+fn flush_history(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    width: u16,
+) -> io::Result<()> {
+    while let Some(raw) = app.pending_output.pop_front() {
+        let lines = history_line_render(&raw, app.lang, width, app.theme, &mut app.render_state);
+        let height = lines.len().max(1) as u16;
+        terminal.insert_before(height, |buf| {
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .render(buf.area, buf);
+        })?;
+    }
+    Ok(())
+}
 
+fn resize_inline_viewport(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    height: u16,
+) -> io::Result<()> {
+    let size = terminal.size()?;
+    let h = height.min(size.height).max(1);
+    let y = size.height.saturating_sub(h);
+    terminal.resize(Rect::new(0, y, size.width, h))
+}
+
+pub(crate) fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+) -> AnyResult<()> {
+    let mut viewport_h = desired_viewport_height(app, terminal_width());
     loop {
         app.drain_worker_events();
-        app.advance_reveal();
         app.expire_footer_notice();
         app.refresh_command_palette_state();
         app.refresh_footer_right_state();
-        let width = terminal.size().map(|size| size.width).unwrap_or(80);
-        app.refresh_transcript_cache(width);
-        terminal.draw(|frame| draw(frame, &app))?;
+
+        let width = terminal_width();
+        flush_history(terminal, app, width)?;
+
+        let want = desired_viewport_height(app, width);
+        if want != viewport_h {
+            resize_inline_viewport(terminal, want)?;
+            viewport_h = want;
+        }
+
+        terminal.draw(|frame| draw_viewport(frame, app))?;
 
         if app.should_quit {
             return Ok(());
         }
 
+        if app.onboarding.is_some() || app.overlay.is_modal() {
+            run_modal(terminal, app)?;
+            viewport_h = desired_viewport_height(app, terminal_width());
+            continue;
+        }
+
         if event::poll(poll_timeout(app.is_animating()))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
-                Event::Resize(_, _) => {}
-                _ => {}
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    handle_key(app, key);
+                }
             }
         }
 
         if let Some(command) = app.pending_external.take() {
-            let label = app
-                .lang
-                .choose(command.label_ru, command.label_en)
-                .to_string();
-            let result = run_external_command(terminal, &command);
-            match result {
-                Ok(code) => {
-                    let mode = app.mode;
-                    let lang = app.lang;
-                    if let Some(onboarding) = app.onboarding.as_mut() {
-                        onboarding.refresh_auth();
-                        let ready = auth_requirements_ready(mode, onboarding);
-                        onboarding.message = if ready {
-                            onboarding.step = OnboardingStep::Settings;
-                            lang.choose(
-                                "Авторизация готова. Проверь стартовые настройки и нажми Enter.",
-                                "Authentication is ready. Review startup settings and press Enter.",
-                            )
-                            .to_string()
-                        } else if code == 0 {
-                            lang.choose(
-                                "Логин завершился. Статус обновлен, но нужные аккаунты еще не все готовы.",
-                                "Login finished. Status updated, but not every required account is ready yet.",
-                            ).to_string()
-                        } else {
-                            lang.choose(
-                                "Команда логина завершилась с ошибкой. Проверь текст выше и повтори.",
-                                "Login command failed. Check the text above and try again.",
-                            ).to_string()
-                        };
-                    }
-                    app.push_system(format!("{label}: exit {code}"));
-                }
-                Err(err) => app.push_system(format!("{label}: {err}")),
-            }
+            run_external_inline(terminal, app, command)?;
         }
     }
+}
+
+/// Полноэкранная модалка (effort/settings/chats/onboarding) во временном alt-screen,
+/// пока она активна; на выходе — возврат в inline (инвариант 4).
+fn run_modal(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+) -> AnyResult<()> {
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+    let full = terminal.size()?;
+    terminal.resize(Rect::new(0, 0, full.width, full.height))?;
+
+    while app.onboarding.is_some() || app.overlay.is_modal() {
+        app.drain_worker_events();
+        terminal.draw(|frame| draw_modal(frame, app))?;
+        if app.should_quit {
+            break;
+        }
+        if event::poll(poll_timeout(app.is_animating()))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    handle_key(app, key);
+                }
+            }
+        }
+        if let Some(command) = app.pending_external.take() {
+            run_external_inline(terminal, app, command)?;
+        }
+    }
+
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    resize_inline_viewport(terminal, desired_viewport_height(app, terminal_width()))?;
+    terminal.clear()?;
+    Ok(())
+}
+
+fn run_external_inline(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    command: ExternalCommand,
+) -> AnyResult<()> {
+    let label = app
+        .lang
+        .choose(command.label_ru, command.label_en)
+        .to_string();
+    match run_external_command(terminal, &command) {
+        Ok(code) => {
+            let mode = app.mode;
+            let lang = app.lang;
+            if let Some(onboarding) = app.onboarding.as_mut() {
+                onboarding.refresh_auth();
+                let ready = auth_requirements_ready(mode, onboarding);
+                onboarding.message = if ready {
+                    onboarding.step = OnboardingStep::Settings;
+                    lang.choose(
+                        "Авторизация готова. Проверь стартовые настройки и нажми Enter.",
+                        "Authentication is ready. Review startup settings and press Enter.",
+                    )
+                    .to_string()
+                } else if code == 0 {
+                    lang.choose(
+                        "Логин завершился. Статус обновлен, но нужные аккаунты еще не все готовы.",
+                        "Login finished. Status updated, but not every required account is ready yet.",
+                    ).to_string()
+                } else {
+                    lang.choose(
+                        "Команда логина завершилась с ошибкой. Проверь текст выше и повтори.",
+                        "Login command failed. Check the text above and try again.",
+                    ).to_string()
+                };
+            }
+            app.push_system(format!("{label}: exit {code}"));
+        }
+        Err(err) => app.push_system(format!("{label}: {err}")),
+    }
+    Ok(())
 }
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
