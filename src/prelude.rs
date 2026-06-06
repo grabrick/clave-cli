@@ -12,7 +12,10 @@ pub(crate) use std::{
 };
 
 pub(crate) use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseEvent, MouseEventKind,
+    },
     execute,
     style::force_color_output,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},

@@ -265,6 +265,15 @@ impl App {
     /// Пересобирает кэш рендера транскрипта только при изменении содержимого
     /// (хэш по width/theme/lang/строкам). Зовётся раз за кадр до отрисовки;
     /// в фазе выполнения транскрипт стабилен, поэтому дорогой рендер пропускается.
+    /// Потолок скролла — по числу ОТРИСОВАННЫХ строк (из кэша), а не сообщений,
+    /// иначе до верха длинного чата с переносами/боксами не долистать.
+    pub(crate) fn scroll_ceiling(&self) -> usize {
+        self.transcript_cache
+            .as_ref()
+            .map(|(_, lines)| lines.len() + 2)
+            .unwrap_or(self.transcript.len())
+    }
+
     pub(crate) fn refresh_transcript_cache(&mut self, width: u16) {
         let sig = transcript_signature(&self.transcript, width, self.theme, self.lang);
         let fresh = matches!(&self.transcript_cache, Some((cached, _)) if *cached == sig);
