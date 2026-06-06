@@ -31,6 +31,22 @@ pub(crate) fn loader_tail_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
+/// Окно отрисовки транскрипта: (start, end) в виртуальном теле длиной `total`.
+/// scroll_offset=0 показывает низ (свежие строки), рост offset листает вверх до
+/// начала. Без «минус одна строка» — влезающий чат виден целиком.
+pub(crate) fn transcript_scroll_window(
+    total: usize,
+    area_height: u16,
+    scroll_offset: usize,
+) -> (usize, usize) {
+    let visible = (area_height as usize).max(1);
+    let max_offset = total.saturating_sub(visible);
+    let offset = scroll_offset.min(max_offset);
+    let start = max_offset - offset;
+    let end = (start + visible).min(total);
+    (start, end)
+}
+
 /// Рендерит видимый срез из виртуального тела `[separator] + cached + loader_tail`,
 /// клонируя только строки в окне экрана (кэш экономит пересборку всех строк).
 pub(crate) fn draw_transcript(
@@ -47,11 +63,7 @@ pub(crate) fn draw_transcript(
         Style::default().fg(app.theme.accent_dim()),
     );
     let total = 1 + cached.len() + loader_tail.len();
-    let visible = area.height.saturating_sub(1) as usize;
-    let max_offset = total.saturating_sub(visible);
-    let offset = app.scroll_offset.min(max_offset);
-    let start = max_offset - offset;
-    let end = (start + visible).min(total);
+    let (start, end) = transcript_scroll_window(total, area.height, app.scroll_offset);
 
     let mut slice = Vec::with_capacity(end.saturating_sub(start));
     for index in start..end {
@@ -411,6 +423,16 @@ mod tests {
         ));
         assert!(is_error_status_line("Failed to spawn codex"));
         assert!(is_error_status_line("⎿ Read-only file system"));
+    }
+
+    #[test]
+    fn scroll_window_reaches_top_and_bottom() {
+        // Влезает целиком — показываем всё, без скрытой строки.
+        assert_eq!(transcript_scroll_window(10, 30, 0), (0, 10));
+        // Длинный чат, offset=0 — низ (свежие строки).
+        assert_eq!(transcript_scroll_window(100, 20, 0), (80, 100));
+        // Большой скролл вверх — упираемся в начало, не в пустоту.
+        assert_eq!(transcript_scroll_window(100, 20, 1000), (0, 20));
     }
 
     #[test]
