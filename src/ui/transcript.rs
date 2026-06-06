@@ -166,6 +166,34 @@ pub(crate) fn user_message_box(
     lines
 }
 
+/// Разбивает строку на спаны, подсвечивая inline-код в обратных кавычках.
+/// Незакрытые кавычки оставляются как есть (перенос строки мог разорвать пару).
+fn inline_code_spans(text: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let after = &rest[open + 1..];
+        let Some(close_rel) = after.find('`') else {
+            break;
+        };
+        if open > 0 {
+            spans.push(Span::raw(rest[..open].to_string()));
+        }
+        spans.push(Span::styled(
+            after[..close_rel].to_string(),
+            Style::default().fg(Color::Indexed(180)),
+        ));
+        rest = &after[close_rel + 1..];
+    }
+    if !rest.is_empty() {
+        spans.push(Span::raw(rest.to_string()));
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw(text.to_string()));
+    }
+    spans
+}
+
 pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) -> Line<'static> {
     if line.starts_with("◆ ") {
         Line::from(vec![
@@ -248,8 +276,40 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .fg(Color::Indexed(170))
                 .add_modifier(Modifier::BOLD),
         )
+    } else if let Some(heading) = line.strip_prefix("### ") {
+        Line::styled(
+            format!("  {heading}"),
+            Style::default()
+                .fg(theme.accent_soft())
+                .add_modifier(Modifier::BOLD),
+        )
+    } else if let Some(heading) = line.strip_prefix("## ") {
+        Line::styled(
+            heading.to_string(),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        )
+    } else if let Some(heading) = line.strip_prefix("# ") {
+        Line::styled(
+            heading.to_string(),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )
+    } else if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+        let mut spans = vec![Span::styled("• ", Style::default().fg(theme.accent()))];
+        spans.extend(inline_code_spans(item));
+        Line::from(spans)
+    } else if let Some(quote) = line.strip_prefix("> ") {
+        Line::styled(
+            format!("▏ {quote}"),
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::ITALIC),
+        )
     } else {
-        Line::from(line.to_string())
+        Line::from(inline_code_spans(line))
     }
 }
 
@@ -351,6 +411,18 @@ mod tests {
         ));
         assert!(is_error_status_line("Failed to spawn codex"));
         assert!(is_error_status_line("⎿ Read-only file system"));
+    }
+
+    #[test]
+    fn inline_code_splits_backticks() {
+        let spans = inline_code_spans("use `cargo build` now");
+        let joined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "use cargo build now");
+        assert!(spans.len() >= 2);
+        // незакрытая кавычка не ломает рендер
+        let one = inline_code_spans("broken ` tail");
+        let joined: String = one.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "broken ` tail");
     }
 
     #[test]
