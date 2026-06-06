@@ -356,3 +356,143 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use std::time::Instant;
+
+    const WIDTH: u16 = 100;
+
+    /// Реалистичный транскрипт: user-боксы, ответы, блоки кода, активность, пустые.
+    fn big_transcript(n: usize) -> Vec<String> {
+        let mut t = Vec::with_capacity(n);
+        for i in 0..n {
+            match i % 8 {
+                0 => t.push(format!("◆ Запрос пользователя номер {i} с понятным текстом")),
+                1 => t.push(format!(
+                    "⏺ Ответ модели, строка {i}, достаточно длинная, чтобы сработал перенос по ширине терминала и была реалистичная нагрузка на рендер"
+                )),
+                2 => t.push("```rust".to_string()),
+                3 => t.push(format!("    let value = compute({i}); // комментарий внутри блока кода")),
+                4 => t.push("```".to_string()),
+                5 => t.push(format!("⎿ Читаю src/module_{i}.rs")),
+                6 => t.push(format!(
+                    "обычная строка ответа {i} со словами и словами и ещё словами для переноса по ширине"
+                )),
+                _ => t.push(String::new()),
+            }
+        }
+        t
+    }
+
+    /// Воспроизводит ДОфиксовую O(n²)-версию переноса (для сравнения с текущей O(n)).
+    fn wrap_quadratic(text: &str, max_chars: usize) -> Vec<String> {
+        let max_chars = max_chars.max(1);
+        if text.is_empty() {
+            return vec![String::new()];
+        }
+        let mut rows = Vec::new();
+        let mut current = String::new();
+        for ch in text.chars() {
+            if ch == '\n' {
+                rows.push(current);
+                current = String::new();
+                continue;
+            }
+            if current.chars().count() >= max_chars {
+                rows.push(current);
+                current = String::new();
+            }
+            current.push(ch);
+        }
+        rows.push(current);
+        rows
+    }
+
+    #[test]
+    #[ignore = "perf bench: cargo test --release bench:: -- --ignored --nocapture"]
+    fn bench_transcript_render() {
+        let transcript = big_transcript(500);
+        let iters = 300u32;
+        let start = Instant::now();
+        let mut sink = 0usize;
+        for _ in 0..iters {
+            sink = sink.wrapping_add(
+                transcript_lines(&transcript, Language::Ru, WIDTH, Theme::Purple).len(),
+            );
+        }
+        let elapsed = start.elapsed();
+        println!(
+            "[render] {} строк × {} итер = {:?} → {:?}/кадр (sink={sink})",
+            transcript.len(),
+            iters,
+            elapsed,
+            elapsed / iters,
+        );
+    }
+
+    #[test]
+    #[ignore = "perf bench: cargo test --release bench:: -- --ignored --nocapture"]
+    fn bench_cache_signature_vs_render() {
+        let transcript = big_transcript(500);
+        let iters = 2000u32;
+
+        let start = Instant::now();
+        let mut acc = 0u64;
+        for _ in 0..iters {
+            acc = acc.wrapping_add(transcript_signature(
+                &transcript,
+                WIDTH,
+                Theme::Purple,
+                Language::Ru,
+            ));
+        }
+        let sig = start.elapsed();
+
+        let start = Instant::now();
+        let mut acc2 = 0usize;
+        for _ in 0..iters {
+            acc2 = acc2.wrapping_add(
+                transcript_lines(&transcript, Language::Ru, WIDTH, Theme::Purple).len(),
+            );
+        }
+        let render = start.elapsed();
+
+        let ratio = render.as_nanos() as f64 / sig.as_nanos().max(1) as f64;
+        println!(
+            "[cache] signature {:?}/вызов vs render {:?}/вызов → когда транскрипт стабилен, кадр дешевле ~{ratio:.0}x (acc={acc},{acc2})",
+            sig / iters,
+            render / iters,
+        );
+    }
+
+    #[test]
+    #[ignore = "perf bench: cargo test --release bench:: -- --ignored --nocapture"]
+    fn bench_wrap_linear_vs_quadratic() {
+        let long = "слово ".repeat(2000);
+        let chars = long.chars().count();
+        let iters = 500u32;
+
+        let start = Instant::now();
+        let mut a = 0usize;
+        for _ in 0..iters {
+            a = a.wrapping_add(wrap_terminal_text_preserving_spaces(&long, 80).len());
+        }
+        let linear = start.elapsed();
+
+        let start = Instant::now();
+        let mut b = 0usize;
+        for _ in 0..iters {
+            b = b.wrapping_add(wrap_quadratic(&long, 80).len());
+        }
+        let quad = start.elapsed();
+
+        let ratio = quad.as_nanos() as f64 / linear.as_nanos().max(1) as f64;
+        println!(
+            "[wrap] {chars} симв: O(n) {:?}/вызов vs O(n²) {:?}/вызов → ~{ratio:.0}x (a={a},b={b})",
+            linear / iters,
+            quad / iters,
+        );
+    }
+}
