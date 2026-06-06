@@ -1105,6 +1105,7 @@ fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<Str
         .and_then(|i| i.get("command"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let pattern = input.and_then(|i| i.get("pattern")).and_then(|v| v.as_str());
     let summary = match name {
         "Read" | "NotebookRead" => {
             format!(
@@ -1130,10 +1131,20 @@ fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<Str
             lang.choose("Выполняю", "Running"),
             truncate_chars(command, 50)
         ),
-        "Grep" => lang.choose("Ищу по коду", "Searching code").to_string(),
-        "Glob" => lang
-            .choose("Просматриваю файлы", "Listing files")
-            .to_string(),
+        "Grep" => match pattern {
+            Some(p) => format!("{} {}", lang.choose("Ищу", "Searching"), truncate_chars(p, 40)),
+            None => lang.choose("Ищу по коду", "Searching code").to_string(),
+        },
+        "Glob" => match pattern {
+            Some(p) => format!(
+                "{} {}",
+                lang.choose("Просматриваю", "Listing"),
+                truncate_chars(p, 40)
+            ),
+            None => lang
+                .choose("Просматриваю файлы", "Listing files")
+                .to_string(),
+        },
         other => format!("⚙ {other}"),
     };
     Some(summary)
@@ -1499,6 +1510,16 @@ mod tests {
         assert_eq!(
             summarize_claude_tool(&write, Language::En),
             Some("Writing b/new.rs".to_string())
+        );
+
+        let grep = serde_json::json!({
+            "type": "tool_use",
+            "name": "Grep",
+            "input": {"pattern": "TODO"}
+        });
+        assert_eq!(
+            summarize_claude_tool(&grep, Language::En),
+            Some("Searching TODO".to_string())
         );
     }
 }
