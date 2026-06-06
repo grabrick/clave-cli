@@ -134,3 +134,24 @@ pub(crate) fn draw_modal(frame: &mut Frame<'_>, app: &App) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn viewport_height_accounts_for_panel_and_footer() {
+        // Чистая арифметика высоты живого viewport (без App).
+        assert_eq!(viewport_height_parts(3, 0, 0), 4); // composer3 + footer1
+        assert_eq!(viewport_height_parts(3, 12, 0), 17); // + gap1 + panel12 + footer1
+        assert_eq!(viewport_height_parts(3, 0, 2), 6); // composer3 + loader2 + footer1
+                                                       // gap появляется только при наличии панели.
+        assert_eq!(
+            viewport_height_parts(3, 1, 0),
+            viewport_height_parts(3, 0, 0) + 2,
+            "панель добавляет gap (1) и саму себя (1)"
+        );
+        // Нижняя граница: viewport не схлопывается ниже трёх строк.
+        assert_eq!(viewport_height_parts(0, 0, 0), 3);
+    }
+}

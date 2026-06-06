@@ -234,7 +234,8 @@ fn run_external_inline(
                     lang.choose(
                         "Команда логина завершилась с ошибкой. Проверь текст выше и повтори.",
                         "Login command failed. Check the text above and try again.",
-                    ).to_string()
+                    )
+                    .to_string()
                 };
             }
             app.push_system(format!("{label}: exit {code}"));

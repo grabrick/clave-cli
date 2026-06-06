@@ -326,6 +326,45 @@ mod tests {
     }
 
     #[test]
+    fn code_block_state_persists_across_lines() {
+        // История append-only: один `state` ведёт fence между вызовами
+        // `history_line_render`. Внутри fence строки — как код, после — обычные.
+        let lines = ["```rust", "let x = 1;", "```", "обычный текст"];
+        let mut state = TranscriptRenderState::default();
+        let rendered = lines
+            .iter()
+            .flat_map(|line| history_line_render(line, Language::Ru, 80, Theme::Purple, &mut state))
+            .collect::<Vec<_>>();
+
+        // Маркеры fence сами по себе не дают строк.
+        assert!(!rendered.iter().any(|l| plain(l).contains("```")));
+
+        // Строка внутри fence отрисована как код: серое содержимое и отступ.
+        let code = rendered
+            .iter()
+            .find(|l| plain(l).contains("let x = 1;"))
+            .expect("строка кода отрисована");
+        assert!(plain(code).starts_with("  "), "код имеет отступ");
+        assert!(
+            code.spans.iter().any(|s| s.style.fg == Some(Color::Gray)),
+            "содержимое кода — серым"
+        );
+
+        // Строка после закрывающего fence — обычная, без серой подсветки кода.
+        let normal = rendered
+            .iter()
+            .find(|l| plain(l).contains("обычный текст"))
+            .expect("обычная строка отрисована");
+        assert!(
+            normal.spans.iter().all(|s| s.style.fg != Some(Color::Gray)),
+            "после fence подсветка кода снята"
+        );
+
+        // state вернулся в обычный режим.
+        assert!(!state.in_code_block, "fence закрыт — state сброшен");
+    }
+
+    #[test]
     fn does_not_treat_plain_error_words_as_status_errors() {
         assert!(!is_error_status_line(
             "- слово error внутри обычного ответа не должно красить строку"
@@ -365,4 +404,3 @@ mod tests {
         );
     }
 }
-
