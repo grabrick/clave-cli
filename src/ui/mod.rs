@@ -67,7 +67,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, app: &App) {
     let palette_height = if command_mode {
         command_palette_height(app, area.height, composer_height)
     } else if shortcuts_mode {
-        shortcuts_panel_height()
+        shortcuts_panel_height(app.lang, area.width)
     } else if search_mode {
         search_panel_height()
     } else if gate_mode {

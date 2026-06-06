@@ -21,6 +21,7 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 
     let mode_label = app.chat_mode.label(app.lang);
+    let switch = MODE_SWITCH_KEYS;
     let hints = app
         .lang
         .choose("? подсказки · / команды", "? shortcuts · / commands");
@@ -31,15 +32,16 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let right_width = right.chars().count();
 
     let mode_width = mode_label.chars().count();
+    let switch_width = switch.chars().count() + 1; // пробел перед серым хоткеем
     let sep_width = 2;
     let min_gap = 2;
-    let used = mode_width + sep_width + right_slot_width + min_gap;
+    let used = mode_width + switch_width + sep_width + right_slot_width + min_gap;
     let hints = if used + hints.chars().count() > width {
         truncate_chars(hints, width.saturating_sub(used))
     } else {
         hints.to_string()
     };
-    let left_width = mode_width + sep_width + hints.chars().count();
+    let left_width = mode_width + switch_width + sep_width + hints.chars().count();
     let gap = width.saturating_sub(left_width + right_slot_width);
     let right_padding = right_slot_width.saturating_sub(right_width);
     let line = Line::from(vec![
@@ -49,6 +51,8 @@ pub(crate) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 .fg(app.chat_mode.color())
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::raw(" "),
+        Span::styled(switch, Style::default().fg(MUTED)),
         Span::raw("  "),
         Span::styled(hints, Style::default().fg(app.theme.accent_soft())),
         Span::raw(" ".repeat(gap)),

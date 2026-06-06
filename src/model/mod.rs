@@ -9,6 +9,7 @@ pub(crate) mod mode;
 pub(crate) mod overlay;
 pub(crate) mod provider;
 pub(crate) mod run_access;
+pub(crate) mod shortcuts;
 pub(crate) mod theme;
 pub(crate) mod usage;
 
@@ -21,6 +22,7 @@ pub(crate) use mode::*;
 pub(crate) use overlay::*;
 pub(crate) use provider::*;
 pub(crate) use run_access::*;
+pub(crate) use shortcuts::*;
 pub(crate) use theme::*;
 pub(crate) use usage::*;
 
