@@ -41,32 +41,32 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
-    enable_wheel_mouse(&mut stdout)?;
+    enable_alt_scroll(&mut stdout)?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let result = run_app(&mut terminal);
 
     disable_raw_mode()?;
-    let _ = disable_wheel_mouse(terminal.backend_mut());
+    let _ = disable_alt_scroll(terminal.backend_mut());
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
 }
 
-/// Включает репорт ТОЛЬКО кнопок мыши (`?1000`) в SGR-кодировке (`?1006`), БЕЗ
-/// motion-трекинга (`?1002`). Колесо доходит до приложения (скролл), а
-/// перетаскивание остаётся терминалу — нативное выделение текста продолжает
-/// работать обычным drag. Полный `EnableMouseCapture` включал `?1002` и ломал
-/// выделение — это и была причина бага.
-fn enable_wheel_mouse<W: io::Write>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?1000h\x1b[?1006h")?;
+/// Alternate Scroll Mode (`?1007`): в alt-screen терминал отправляет колесо как
+/// стрелки ↑/↓ и НЕ включает mouse reporting. Любой mouse reporting (даже
+/// `?1000`) перехватывает кнопку → ломает нативное выделение; здесь его нет,
+/// поэтому выделение мышью работает обычным drag, а колесо приходит как Up/Down
+/// и скроллит чат. Так делают less/vim.
+fn enable_alt_scroll<W: io::Write>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[?1007h")?;
     out.flush()
 }
 
-fn disable_wheel_mouse<W: io::Write>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?1006l\x1b[?1000l")?;
+fn disable_alt_scroll<W: io::Write>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[?1007l")?;
     out.flush()
 }
 
@@ -99,7 +99,6 @@ pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> 
         if event::poll(poll_timeout(app.is_animating()))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
-                Event::Mouse(mouse) => handle_mouse(&mut app, mouse),
                 Event::Resize(_, _) => {}
                 _ => {}
             }
@@ -161,21 +160,6 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    if app.onboarding.is_some() || app.overlay != Overlay::None {
-        return;
-    }
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            app.scroll_offset = (app.scroll_offset + 3).min(app.scroll_ceiling());
-        }
-        MouseEventKind::ScrollDown => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(3);
-        }
-        _ => {}
-    }
-}
-
 pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -215,10 +199,6 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => app.open_search(),
             KeyCode::Left => app.move_word_left(),
             KeyCode::Right => app.move_word_right(),
-            KeyCode::Up => {
-                app.scroll_offset = (app.scroll_offset + 1).min(app.scroll_ceiling());
-            }
-            KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_sub(1),
             KeyCode::Backspace => app.delete_word_back(),
             KeyCode::Delete => app.delete_word_forward(),
             KeyCode::Home => app.cursor = 0,
@@ -247,8 +227,22 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
         KeyCode::Delete => app.delete(),
         KeyCode::Left => app.move_left(),
         KeyCode::Right => app.move_right(),
-        KeyCode::Up => app.history_prev(),
-        KeyCode::Down => app.history_next(),
+        KeyCode::Up => {
+            // В палитре команд ↑/↓ выбирают подсказку; иначе листают чат
+            // (колесо приходит как ↑/↓ через Alternate Scroll Mode).
+            if app.suggestions().is_empty() {
+                app.scroll_offset = (app.scroll_offset + 1).min(app.scroll_ceiling());
+            } else {
+                app.history_prev();
+            }
+        }
+        KeyCode::Down => {
+            if app.suggestions().is_empty() {
+                app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            } else {
+                app.history_next();
+            }
+        }
         KeyCode::Home => app.move_line_start(),
         KeyCode::End => app.move_line_end(),
         KeyCode::PageUp => {
