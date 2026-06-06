@@ -672,4 +672,45 @@ mod tests {
         // Пустой старт — показываем приветственный блок.
         assert_eq!(startup_history(&[], welcome.clone()), welcome);
     }
+
+    #[test]
+    fn startup_seeds_restored_chat_from_disk() {
+        // Полный путь регрессии: реальный файл чата на диске -> restore_or_create_chat
+        // -> startup_history -> буфер печати. Песочница в temp-каталоге.
+        let dir = env::temp_dir().join(format!("clave-startup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+
+        let id = "chat-startup-7";
+        let path = chat_path_for_id(&dir, id);
+        save_chat_transcript(
+            &path,
+            id,
+            &[
+                "◆ MARKER_OLD_CHAT".to_string(),
+                "⏺ STALE_ANSWER".to_string(),
+            ],
+        )
+        .expect("save chat");
+
+        // Возобновление: чат поднят с диска и целиком попал в стартовый буфер.
+        let (rid, _, transcript) = restore_or_create_chat(&dir, Some(id), Language::Ru);
+        assert_eq!(rid, id);
+        let welcome = vec!["✦ clave готов".to_string()];
+        assert_eq!(
+            startup_history(&transcript, welcome.clone()),
+            vec![
+                "◆ MARKER_OLD_CHAT".to_string(),
+                "⏺ STALE_ANSWER".to_string()
+            ],
+            "восстановленный чат обязан дойти до буфера печати"
+        );
+
+        // Пустой старт (last_chat=None): буфер = приветственный блок, не пусто.
+        let (_, _, fresh) = restore_or_create_chat(&dir, None, Language::Ru);
+        assert!(fresh.is_empty());
+        assert_eq!(startup_history(&fresh, welcome.clone()), welcome);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
