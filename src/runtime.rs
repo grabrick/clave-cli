@@ -40,9 +40,9 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     let _guard = TerminalGuard::new()?;
     let mut app = App::new();
-    if app.transcript.is_empty() {
-        app.pending_output.push_back(welcome_banner(app.lang));
-    }
+    let welcome = welcome_lines(&app);
+    let initial = startup_history(&app.transcript, welcome);
+    app.pending_output.extend(initial);
     let width = terminal_width();
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::with_options(
@@ -76,12 +76,48 @@ fn terminal_width() -> u16 {
     crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80)
 }
 
-fn welcome_banner(lang: Language) -> String {
-    lang.choose(
-        "✦ clave готов. Введи задачу или /help.",
-        "✦ clave ready. Type a task or /help.",
-    )
-    .to_string()
+/// Что показать в буфере при старте: восстановленный чат — построчно как есть,
+/// иначе приветственный блок. `flush_history` печатает только pending_output,
+/// поэтому стартовый transcript обязан попасть сюда — иначе экран пустой.
+fn startup_history(transcript: &[String], welcome: Vec<String>) -> Vec<String> {
+    if transcript.is_empty() {
+        welcome
+    } else {
+        transcript.to_vec()
+    }
+}
+
+/// Приветственный блок для пустого старта — печатается в историю (инвариант 4:
+/// welcome живёт в истории, а не в полноэкранной карточке).
+fn welcome_lines(app: &App) -> Vec<String> {
+    let lang = app.lang;
+    vec![
+        lang.choose("✦ clave готов", "✦ clave ready").to_string(),
+        String::new(),
+        lang.choose(
+            "Введи сообщение и Enter — прямой чат с моделью-агентом.",
+            "Type a message and press Enter — chat with the model as an agent.",
+        )
+        .to_string(),
+        lang.choose(
+            "/plan <задача> — двухагентная спека (architect + reviewer).",
+            "/plan <task> — two-agent spec (architect + reviewer).",
+        )
+        .to_string(),
+        lang.choose(
+            "/help · /chats · /settings · /effort — команды и настройки.",
+            "/help · /chats · /settings · /effort — commands and settings.",
+        )
+        .to_string(),
+        String::new(),
+        format!(
+            "{} {} · chat {} · effort {}",
+            lang.choose("Режим", "Mode"),
+            app.mode.as_str(),
+            app.direct_provider.as_str(),
+            app.effort_summary()
+        ),
+    ]
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).
@@ -624,5 +660,16 @@ mod tests {
         assert!(poll_timeout(true) < poll_timeout(false));
         assert_eq!(poll_timeout(true), Duration::from_millis(16));
         assert_eq!(poll_timeout(false), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn startup_history_replays_chat_else_welcome() {
+        let welcome = vec!["✦ clave готов".to_string(), "подсказки".to_string()];
+        let chat = vec!["◆ привет".to_string(), "⏺ ответ".to_string()];
+        // Восстановленный чат печатается как есть — иначе при старте пустой экран,
+        // т.к. flush_history печатает только pending_output (регрессия inline).
+        assert_eq!(startup_history(&chat, welcome.clone()), chat);
+        // Пустой старт — показываем приветственный блок.
+        assert_eq!(startup_history(&[], welcome.clone()), welcome);
     }
 }

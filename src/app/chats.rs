@@ -71,6 +71,9 @@ impl App {
                 self.chat_path = path;
                 self.transcript = lines;
                 self.last_run = find_last_run(&self.transcript);
+                // Inline append-only: восстановленный чат надо перепечатать в буфер,
+                // иначе flush_history его не покажет (печатает только pending_output).
+                self.pending_output.extend(self.transcript.iter().cloned());
                 self.pending_plan = None;
                 self.plan_flow = PlanFlow::None;
                 self.status = self.lang.choose("чат открыт", "chat resumed").to_string();
