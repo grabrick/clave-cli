@@ -327,34 +327,16 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
         KeyCode::Delete => app.delete(),
         KeyCode::Left => app.move_left(),
         KeyCode::Right => app.move_right(),
-        KeyCode::Up => {
-            // В палитре команд ↑/↓ выбирают подсказку; иначе листают чат
-            // (колесо приходит как ↑/↓ через Alternate Scroll Mode).
-            if app.suggestions().is_empty() {
-                app.scroll_offset = (app.scroll_offset + 1).min(app.scroll_ceiling());
-            } else {
-                app.history_prev();
-            }
-        }
-        KeyCode::Down => {
-            if app.suggestions().is_empty() {
-                app.scroll_offset = app.scroll_offset.saturating_sub(1);
-            } else {
-                app.history_next();
-            }
-        }
+        // Скролл истории — нативный (колесо/скроллбар терминала, inline-режим).
+        KeyCode::Up => app.history_prev(),
+        KeyCode::Down => app.history_next(),
         KeyCode::Home => app.move_line_start(),
         KeyCode::End => app.move_line_end(),
-        KeyCode::PageUp => {
-            app.scroll_offset = (app.scroll_offset + 10).min(app.scroll_ceiling());
-        }
-        KeyCode::PageDown => app.scroll_offset = app.scroll_offset.saturating_sub(10),
         KeyCode::Esc => {
             app.input.clear();
             app.cursor = 0;
             app.history_index = None;
             app.selected_suggestion = 0;
-            app.scroll_offset = 0;
         }
         KeyCode::Char('?') if app.input.is_empty() => app.overlay = Overlay::Shortcuts,
         KeyCode::Char(ch) if !ch.is_control() => app.insert_char(ch),

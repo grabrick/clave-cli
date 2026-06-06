@@ -40,18 +40,8 @@ pub(crate) const SHORTCUTS: &[ShortcutSpec] = &[
     },
     ShortcutSpec {
         keys: "↑↓",
-        ru: "скролл / выбор",
-        en: "scroll / pick",
-    },
-    ShortcutSpec {
-        keys: "Ctrl+P/N",
-        ru: "история ввода",
-        en: "input history",
-    },
-    ShortcutSpec {
-        keys: "PageUp/PageDown",
-        ru: "скролл",
-        en: "scroll",
+        ru: "история",
+        en: "history",
     },
     ShortcutSpec {
         keys: "Ctrl+R",

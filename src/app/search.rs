@@ -11,7 +11,6 @@ impl App {
     pub(crate) fn close_search(&mut self) {
         self.overlay = Overlay::None;
         self.search_query.clear();
-        self.scroll_offset = 0;
         self.status = self.lang.choose("готов", "ready").to_string();
     }
 
@@ -54,17 +53,13 @@ impl App {
         self.sync_search_scroll();
     }
 
-    /// Прокрутить ленту так, чтобы текущее совпадение попало в видимую область.
-    /// Грубо: считаем смещение в логических строках (≈ визуальным при отсутствии переносов).
+    /// В inline-режиме скроллом владеет терминал, поэтому поиск только удерживает
+    /// корректный индекс совпадения (без программной прокрутки ленты).
     pub(crate) fn sync_search_scroll(&mut self) {
         let matches = self.search_matches();
         if matches.is_empty() {
-            self.scroll_offset = 0;
             return;
         }
-        let index = self.search_index.min(matches.len() - 1);
-        self.search_index = index;
-        let line = matches[index];
-        self.scroll_offset = self.transcript.len().saturating_sub(1).saturating_sub(line);
+        self.search_index = self.search_index.min(matches.len() - 1);
     }
 }

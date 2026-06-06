@@ -17,24 +17,12 @@ pub(crate) enum ChatRunResult {
     Cancelled,
 }
 
-pub(crate) struct RevealLine {
-    pub(crate) text: String,
-    pub(crate) visible_chars: usize,
-    pub(crate) transcript_index: usize,
-    pub(crate) last_tick: Instant,
-}
-
 impl App {
-    /// Идёт ли сейчас какая-либо анимация (typewriter, loader, переходы футера, shimmer effort).
+    /// Идёт ли сейчас анимация (loader / footer-notice / shimmer effort).
     pub(crate) fn is_animating(&self) -> bool {
-        // Намеренно НЕ включаем footer_right_changed_at: правый сегмент футера
-        // ротируется каждые 8с и в простое будил 60fps-перерисовку всего экрана.
-        // Его переход доживёт на 100мс-тике (чуть грубее), зато простой реально спит.
-        self.running
-            || self.reveal_active.is_some()
-            || !self.reveal_queue.is_empty()
-            || self.footer_notice.is_some()
-            || self.overlay == Overlay::Effort
+        // footer_right_changed_at намеренно НЕ учитываем (ротация раз в 8с не должна
+        // будить простой). Reveal удалён — история append-only (insert_before).
+        self.running || self.footer_notice.is_some() || self.overlay == Overlay::Effort
     }
 
     pub(crate) fn push_run_activity(&mut self, activity: impl Into<String>) {
@@ -197,94 +185,4 @@ impl App {
         }
     }
 
-    pub(crate) fn enqueue_reveal(&mut self, line: impl Into<String>) {
-        self.scroll_offset = 0;
-        self.reveal_queue.push_back(line.into());
-    }
-
-    pub(crate) fn advance_reveal(&mut self) {
-        if self.reveal_active.is_none() {
-            self.start_next_reveal_line();
-        }
-
-        let Some(active) = self.reveal_active.as_mut() else {
-            return;
-        };
-
-        let elapsed = active.last_tick.elapsed();
-        if elapsed < Duration::from_millis(18) {
-            return;
-        }
-
-        let total_chars = active.text.chars().count();
-        let steps = (elapsed.as_millis() / 18).max(1) as usize;
-        // 6 символов за тик (было 3): печать завершается вдвое быстрее, значит
-        // меньше времени держим 60fps-анимацию ради typewriter-эффекта.
-        active.visible_chars = active
-            .visible_chars
-            .saturating_add(steps * 6)
-            .min(total_chars);
-        active.last_tick = Instant::now();
-
-        let visible = prefix_chars(&active.text, active.visible_chars);
-        if active.transcript_index < self.transcript.len() {
-            self.transcript[active.transcript_index] = visible;
-        }
-
-        if active.visible_chars >= total_chars {
-            let text = active.text.clone();
-            self.reveal_active = None;
-            if let Err(err) = append_chat_line(&self.chat_path, &text) {
-                self.status = self.lang.choose("ошибка чата", "chat error").to_string();
-                self.transcript.push(format!(
-                    "{} {}",
-                    self.lang
-                        .choose("Не удалось сохранить чат:", "Failed to save chat:"),
-                    err
-                ));
-            }
-            self.start_next_reveal_line();
-        }
-    }
-
-    pub(crate) fn start_next_reveal_line(&mut self) {
-        let Some(text) = self.reveal_queue.pop_front() else {
-            return;
-        };
-
-        let transcript_index = self.transcript.len();
-        self.transcript.push(String::new());
-        if self.transcript.len() > MAX_TRANSCRIPT_LINES {
-            let remove_count = self.transcript.len() - MAX_TRANSCRIPT_LINES;
-            self.transcript.drain(0..remove_count);
-        }
-        let transcript_index = transcript_index.min(self.transcript.len().saturating_sub(1));
-        self.reveal_active = Some(RevealLine {
-            text,
-            visible_chars: 0,
-            transcript_index,
-            last_tick: Instant::now(),
-        });
-    }
-
-    /// Пересобирает кэш рендера транскрипта только при изменении содержимого
-    /// (хэш по width/theme/lang/строкам). Зовётся раз за кадр до отрисовки;
-    /// в фазе выполнения транскрипт стабилен, поэтому дорогой рендер пропускается.
-    /// Потолок скролла — по числу ОТРИСОВАННЫХ строк (из кэша), а не сообщений,
-    /// иначе до верха длинного чата с переносами/боксами не долистать.
-    pub(crate) fn scroll_ceiling(&self) -> usize {
-        self.transcript_cache
-            .as_ref()
-            .map(|(_, lines)| lines.len() + 2)
-            .unwrap_or(self.transcript.len())
-    }
-
-    pub(crate) fn refresh_transcript_cache(&mut self, width: u16) {
-        let sig = transcript_signature(&self.transcript, width, self.theme, self.lang);
-        let fresh = matches!(&self.transcript_cache, Some((cached, _)) if *cached == sig);
-        if !fresh {
-            let lines = transcript_lines(&self.transcript, self.lang, width, self.theme);
-            self.transcript_cache = Some((sig, lines));
-        }
-    }
 }

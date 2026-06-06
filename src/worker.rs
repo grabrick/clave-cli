@@ -21,10 +21,6 @@ where
     });
 }
 
-pub(crate) fn prefix_chars(text: &str, count: usize) -> String {
-    text.chars().take(count).collect()
-}
-
 pub(crate) fn estimate_tokens(text: &str) -> usize {
     let chars = text.chars().count();
     let words = text.split_whitespace().count();
