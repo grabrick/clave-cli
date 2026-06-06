@@ -40,21 +40,34 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
+    enable_wheel_mouse(&mut stdout)?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let result = run_app(&mut terminal);
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    let _ = disable_wheel_mouse(terminal.backend_mut());
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
+}
+
+/// Включает репорт ТОЛЬКО кнопок мыши (`?1000`) в SGR-кодировке (`?1006`), БЕЗ
+/// motion-трекинга (`?1002`). Колесо доходит до приложения (скролл), а
+/// перетаскивание остаётся терминалу — нативное выделение текста продолжает
+/// работать обычным drag. Полный `EnableMouseCapture` включал `?1002` и ломал
+/// выделение — это и была причина бага.
+fn enable_wheel_mouse<W: io::Write>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[?1000h\x1b[?1006h")?;
+    out.flush()
+}
+
+fn disable_wheel_mouse<W: io::Write>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[?1006l\x1b[?1000l")?;
+    out.flush()
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).
