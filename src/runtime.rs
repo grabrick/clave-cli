@@ -40,18 +40,14 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let result = run_app(&mut terminal);
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -86,7 +82,6 @@ pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> 
         if event::poll(poll_timeout(app.is_animating()))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
-                Event::Mouse(mouse) => handle_mouse(&mut app, mouse),
                 Event::Resize(_, _) => {}
                 _ => {}
             }
@@ -145,21 +140,6 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         Overlay::Chats => handle_chats_key(app, key),
         Overlay::Shortcuts => handle_shortcuts_key(app, key),
         Overlay::Search => handle_search_key(app, key),
-    }
-}
-
-pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    if app.onboarding.is_some() || app.overlay != Overlay::None {
-        return;
-    }
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            app.scroll_offset = (app.scroll_offset + 3).min(app.scroll_ceiling());
-        }
-        MouseEventKind::ScrollDown => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(3);
-        }
-        _ => {}
     }
 }
 
