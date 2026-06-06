@@ -232,6 +232,22 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .fg(theme.accent())
                 .add_modifier(Modifier::BOLD),
         )
+    } else if line.starts_with("🅐 ") {
+        // Заголовок шага исполнителя в тандеме — цветом акцента.
+        Line::styled(
+            line.to_string(),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        )
+    } else if line.starts_with("🅒 ") {
+        // Заголовок шага критика в тандеме — отдельным цветом (как режим Tandem).
+        Line::styled(
+            line.to_string(),
+            Style::default()
+                .fg(Color::Indexed(170))
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Line::from(line.to_string())
     }
