@@ -277,6 +277,7 @@ impl App {
             "/retry" => self.retry_last(),
             "/export" => self.export_chat(),
             "/search" => self.open_search(),
+            "/mouse" => self.toggle_mouse_capture(),
             "/effort" => {
                 self.effort_original = Some(self.effort_snapshot());
                 self.effort_focus = 0;
@@ -488,6 +489,24 @@ impl App {
         self.push_system(format!("  ⎿ {label}: {value}"));
     }
 
+    /// Переключает захват мыши. Включён → колесо скроллит чат (выделять текст —
+    /// с зажатым Shift). Выключен → выделение мышью обычное, колесо у терминала.
+    pub(crate) fn toggle_mouse_capture(&mut self) {
+        self.mouse_capture = !self.mouse_capture;
+        let message = if self.mouse_capture {
+            self.lang.choose(
+                "Скролл колесом включён · выделять текст — с зажатым Shift",
+                "Wheel scroll on · select text with Shift held",
+            )
+        } else {
+            self.lang.choose(
+                "Скролл колесом выключен · выделение мышью как обычно",
+                "Wheel scroll off · normal mouse selection",
+            )
+        };
+        self.push_command_result(message);
+    }
+
     #[cfg(test)]
     pub(crate) fn command_has_handler(command: &str) -> bool {
         matches!(
@@ -526,6 +545,7 @@ impl App {
                 | "/retry"
                 | "/export"
                 | "/search"
+                | "/mouse"
                 | "/name"
                 | "/rename"
                 | "/setup"
