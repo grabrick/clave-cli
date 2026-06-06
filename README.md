@@ -1,212 +1,183 @@
 # Clave
 
-Personal/local Rust MVP for orchestrating multiple coding agents into one
-decision loop.
+Локальный Rust TUI-оркестратор: связывает два кодинг-CLI — `claude` и `codex` —
+в один механизм. Обе модели работают как **полноценные агенты** с доступом к
+рабочей директории: читают, создают и правят файлы, выполняют команды.
 
-The first version does not store AI account credentials. It calls already
-installed and authenticated local CLIs:
+**Учётные данные провайдеров не хранятся.** Clave вызывает уже залогиненные
+локальные CLI пользователя — это проще и безопаснее, чем работать с сессиями
+провайдеров напрямую. Каждый использует свой логин CLI.
 
-- `claude` for draft and revision planning.
-- `codex` for skeptical review and scope control.
+## Как устроено
 
-This keeps the integration small, cross-platform, and safer than trying to
-handle provider login sessions directly. For friends, the intended setup is that
-each person uses their own local CLI login.
+Два слоя:
 
-## Usage
+- **TUI** (`clave`) — интерактивная оболочка: прямой чат с режимами + запуск
+  планирования. Зависимости намеренно минимальны: `crossterm` + `ratatui`, без
+  async-рантайма (потоки + каналы).
+- **Движок** (`spec-clave`) — bash-оркестрация двухагентного цикла планирования:
+  architect пишет implementation-spec → reviewer возвращает
+  `VERDICT: APPROVE|REVISE` → architect ревизит, N раундов или до одобрения.
 
-## Terminal UI Stack
+## Установка
 
-The interactive UI is a Rust TUI, not a shell-rendered screen:
+Нужны:
 
-- `ratatui` for layout, widgets, redraws, and resize-safe terminal rendering.
-- `crossterm` for raw input, alternate screen, key events, and terminal control.
-- `spec-clave` remains the orchestration engine used by the TUI.
-
-## Project Layout
-
-- `src/main.rs` wires modules and delegates startup.
-- `src/model/` stores shared enums, command specs, effort constants, labels, language, provider, theme, and mode types.
-- `src/app/` owns application state and workflows: config, chats, commands, editor history, effort, settings, worker events, footer state, onboarding, and model runs.
-- `src/runtime.rs` handles terminal startup, event loop, and keyboard input.
-- `src/ui/` renders the TUI screens and reusable widgets: command palette, prompt, footer, loader, transcript, onboarding, welcome, settings, and effort picker.
-- `src/storage.rs` handles config, history, and saved chat files.
-- `src/auth.rs` checks and launches local CLI authentication.
-- `src/worker.rs` runs provider CLIs and the `spec-clave` engine.
-- `src/input.rs` contains cursor and word-boundary helpers.
-
-Current TUI shape:
-
-- Claude Code-style welcome panel;
-- selectable accent themes: purple, cyan, rose, amber, and mono;
-- Russian interface by default;
-- first-run setup wizard saved to `~/.clave/config`;
-- persistent input history saved to `~/.clave/history`;
-- saved chats stored under `~/.clave/chats`;
-- startup opens the welcome screen instead of auto-restoring the last chat;
-- saved chats can be reopened with `/chats` and `/resume <id>`;
-- plain input sends a direct chat request to the selected direct-chat model;
-- `/plan <task>` runs the multi-agent `spec-clave` planning loop;
-- final brief content is printed back into the chat after each `/plan` run;
-- bordered user messages in the transcript;
-- bottom composer;
-- animated loader while a model request is running, with stable text and token estimate;
-- Codex `tokens used` output is parsed after direct chat responses when available;
-- slash-command palette appears below the input when it starts with `/`, including Russian-layout command normalization;
-- `/setup` reopens the setup wizard;
-- `/plan <task>` runs Clave planning;
-- `/settings` opens the settings screen;
-- `/chat-model codex|claude` chooses who answers simple direct messages;
-- `/theme purple|cyan|rose|amber|mono` changes the accent palette;
-- `/roles <executor> <reviewer>` chooses the planning/code executor and reviewer;
-- `/mode codex-only|claude-codex|codex-claude|claude-only` changes the orchestration pairing;
-- `/brainstorming`, `/writing-plans`, `/finishing-a-development-branch`,
-  `/subagent-driven-development`, `/using-git-worktrees`, and `/autofix-pr`
-  run planning presets through the selected orchestration pairing;
-- `/advisor <question>` and `/btw <question>` run direct side-channel chats;
-- `/add-dir <directory>` sets the active working directory for direct chat and
-  planning runs; relative paths are resolved from the directory where `clave`
-  was launched;
-- `.clave` artifacts are written to the launch working directory by default, not to the orchestrator install directory;
-- `/branch` creates a new saved chat from the current transcript;
-- `/new` starts a new saved chat;
-- `/chats` lists saved chats;
-- `/resume <id>` opens a saved chat;
-- `/lang ru|en` switches interface language;
-- `/effort` opens the effort picker;
-- `Tab` completes the first visible slash command;
-- `Up` / `Down` browse input history;
-- `Alt+Left` / `Alt+Right` or `Ctrl+Left` / `Ctrl+Right` move by word;
-- `Ctrl+A` / `Ctrl+E` move to line start/end;
-- `Ctrl+Home` / `Ctrl+End` move to input start/end;
-- `Ctrl+B` / `Ctrl+F` move one character left/right;
-- `Ctrl+U` / `Ctrl+K` delete before/after cursor;
-- `Ctrl+W` or `Alt+Backspace` deletes the previous word;
-- `Alt+D` deletes the next word;
-- `Ctrl+P` / `Ctrl+N` browse input history;
-- `Ctrl+J` inserts a newline;
-- `Enter` submits;
-- `Esc` clears input;
-- `Ctrl+C` stops a running request or asks for exit confirmation; pressing it again
-  within 2 seconds exits.
-
-Open the interactive Rust TUI:
+- Rust + `cargo`
+- `claude` CLI — установлен и залогинен
+- `codex` CLI — установлен и залогинен
 
 ```bash
-clave
-```
-
-On first launch the TUI asks for the default agent pairing:
-
-- `codex-only`;
-- `claude-codex`;
-- `codex-claude`;
-- `claude-only`.
-
-The setup screen checks `codex login status` and `claude auth status --text`.
-It can launch `codex login` and `claude auth login`, then saves startup defaults
-for language, review rounds, effort, working directory, output directory, mode,
-direct chat provider, and theme.
-
-The local launcher can be symlinked or copied into a directory on your `PATH`
-as `clave`.
-
-The launcher preserves the directory where `clave` was invoked as
-`CLAVE_LAUNCH_CWD`. Relative `work_dir` and `out_dir` values are resolved from
-that launch directory, so project artifacts stay in the project you opened.
-Legacy `DUEL_*` environment variables still work as fallbacks.
-
-The launcher prefers the compiled Rust binary:
-
-```bash
-cd ai-orchestrator
+git clone https://github.com/grabrick/clave-cli-v0
+cd clave-cli-v0
 cargo build --release
-clave
+./clave            # лаунчер найдёт release-бинарник (или соберёт через cargo)
 ```
 
-If Rust is not installed, direct one-shot task fallback still works through the
-shell engine, but the interactive TUI will not open.
+`./clave` можно скопировать или симлинкнуть в любой каталог из `PATH`.
 
-Run a task directly:
+## Запуск
 
 ```bash
-clave --codex-only "Build an affiliate program for a SaaS product"
+clave                  # интерактивный TUI
+clave "<задача>"       # прогнать задачу напрямую через движок планирования
+clave --serve          # мобильный веб-ремоут (экспериментально, см. ниже)
+clave --help
 ```
 
-Use the shell engine directly only when Rust is not installed yet:
+При первом запуске мастер проверяет авторизацию (`codex login status`,
+`claude auth status`), может запустить логин и сохраняет стартовые настройки в
+`~/.clave/config`.
+
+## Режимы прямого чата
+
+Переключаются по **Shift+Tab** (показаны серым у индикатора режима в футере;
+индикатор `>> …` слева своим цветом):
+
+| Режим | Что делает | Доступ к файлам |
+|-------|-----------|-----------------|
+| **Discussion** | просто отвечает, без инструментов | — |
+| **Plan** | спланировать → показать план → по `Enter` выполнить | фаза 1 read-only, фаза 2 полный доступ |
+| **Full Access** | автономно делает всё сразу | чтение / правки / Bash |
+| **Tandem** | исполнитель + критик: дебаты → исполнение → ревью | две модели в паре |
+
+**Plan-гейт:** когда план показан — `Enter` выполнить, ввести текст + `Enter`
+доработать план по замечанию, `Esc` отменить.
+
+**Tandem** берёт роли из текущего `Mode` (исполнитель = architect, критик =
+reviewer): обсуждение подхода до консенсуса (лимит — раунды) → исполнение →
+ревью реального результата → финальная правка с подтверждением.
+
+Доступ агентов ограничен рабочей директорией. `claude` запускается со
+`--strict-mcp-config` — доступны ровно инструменты режима, без сторонних
+MCP-серверов из глобального конфига.
+
+## Планирование
+
+`/plan <задача>` в TUI (или `clave "<задача>"`) запускает движок `spec-clave`.
+Артефакты прогона пишутся в каталог запуска (по умолчанию `.clave/`,
+настраивается `--out`); финал — `final-decision-brief.md` — печатается обратно
+в чат.
+
+Движок можно вызвать и напрямую (без Rust):
 
 ```bash
-./spec-clave "Build an affiliate program for a SaaS product"
+./spec-clave "<задача>"                              # прогон
+./spec-clave --dry-run "<задача>"                    # план вызовов без трат токенов
+./spec-clave --rounds 3 --out .clave "<задача>"
+./spec-clave --architect claude --reviewer codex "<задача>"
+./spec-clave --codex-only --effort xhigh "<задача>"
 ```
 
-If Claude Code subscription access is not enabled on the machine yet, use Codex
-for both roles:
+`--dry-run` — самый дешёвый способ проверить логику оркестрации.
+
+## Команды
+
+Палитра появляется при вводе `/` (есть нормализация русской раскладки —
+`.здфт` → `/plan`). Основные группы:
+
+- **Чат / роли:** `/chat-model claude|codex`, `/mode codex-only|claude-codex|codex-claude|claude-only`, `/roles <executor> <reviewer>`
+- **Планирование:** `/plan <задача>` + пресеты `/brainstorming`, `/writing-plans`, `/autofix-pr`, …
+- **Чаты:** `/new`, `/chats`, `/resume <id>`, `/name`, `/rename`, `/clear history`
+- **Настройки:** `/settings`, `/setup`, `/effort`, `/theme purple|cyan|rose|amber|mono`, `/lang ru|en`, `/add-dir <dir>`
+- **Прочее:** `/cost`, `/search`, `/retry`, `/export`, `/advisor <вопрос>`, `/btw <вопрос>`, `/help`
+
+`/help` — полный список.
+
+## Хоткеи
+
+`Shift+Tab` режим · `Enter` отправить · `Ctrl+J` новая строка · `Tab`
+автодополнение · `↑↓` история · `PageUp/PageDown` скролл · `Ctrl+R` поиск ·
+`Ctrl+A/E` начало/конец · `Ctrl+W/U/K` удаление · `Alt+←→` по словам · `Esc`
+сброс · `Ctrl+C ×2` выход · `?` подсказки.
+
+Полный список — клавиша `?` в TUI (источник один — `model/shortcuts.rs`).
+
+## Effort
+
+Передаётся реальному CLI, не косметика:
+
+- **Codex:** `low | medium | high | xhigh` (через `model_reasoning_effort`)
+- **Claude:** `low | medium | high | max` (через `--effort`)
+- **Смешанный режим:** общий `low|medium|high` или раздельные настройки для
+  claude и codex.
+
+## Хранилище и переменные окружения
+
+Состояние — в `~/.clave/` (`config`, `history`, `chats/`). Чаты при старте не
+авто-восстанавливаются — открывается welcome; вернуть через `/chats` +
+`/resume <id>`.
+
+- `CLAVE_HOME` — каталог состояния (легаси `DUEL_HOME` — fallback)
+- `CLAVE_CONFIG` — путь к файлу конфига
+- `CLAVE_CLAUDE` / `CLAVE_CODEX` — пути к бинарникам CLI (удобно для моков в тестах)
+- `CLAVE_ENGINE` — явный путь к `spec-clave`
+- `CLAVE_SKIP_ONBOARDING=1` — пропустить мастер первого запуска
+
+Легаси `DUEL_*` / `AI_ORCHESTRATOR_*` работают как fallback; старое состояние из
+`~/.duel/` мигрируется автоматически.
+
+## Темы и язык
+
+Акценты: `purple` · `cyan` · `rose` · `amber` · `mono` (`/theme` или мастер).
+Интерфейс по умолчанию русский, переключение — `/lang ru|en`.
+
+## Мобильный ремоут (экспериментально)
+
+`clave --serve` поднимает локальный веб-сервер (`tiny_http`) для управления с
+телефона: выбрать режим, отправить задачу, смотреть стрим вывода, отменить.
 
 ```bash
-./spec-clave --codex-only "Build an affiliate program for a SaaS product"
+CLAVE_SERVE_TOKEN=secret clave --serve --host <tailscale-ip> --port 8765
 ```
 
-Or pipe a larger task:
+> ⚠ Full Access и Tandem исполняют код. Открывайте ремоут только в доверенной
+> приватной сети (например, Tailscale) и с токеном. Статус: V0, не финализировано.
+
+## Архитектура
+
+- `spec-clave` — bash-движок оркестрации (architect / reviewer / rounds).
+- `src/model/` — чистые типы и константы: `Mode`, `Provider`, `Theme`,
+  `Language`, `ChatMode`, `RunAccess`, effort-таблицы, `COMMANDS`, `SHORTCUTS`.
+- `src/app/` — состояние и поведение: чат, планы (`plan.rs`), тандем
+  (`tandem.rs`), чаты, настройки, события, footer.
+- `src/ui/` — рендер ratatui (читает `&App`, не мутирует).
+- `src/runtime.rs` — точка входа, цикл событий, обработка клавиш.
+- `src/worker.rs` — запуск провайдеров и движка, парсинг ответов.
+- `src/server/` — веб-ремоут (`--serve`).
+- `src/storage.rs` / `src/auth.rs` / `src/input.rs` — состояние, авторизация CLI, ввод.
+
+## Разработка
 
 ```bash
-pbpaste | ./spec-clave
+cargo build --release
+cargo run                  # TUI в dev-режиме
+cargo test
+cargo fmt && cargo clippy
+cargo test --release bench:: -- --ignored --nocapture   # перф-бенчи рендера
 ```
 
-Useful shell engine flags:
+## Статус
 
-```bash
-./spec-clave --rounds 3 --out .clave "Build an affiliate program"
-./spec-clave --dry-run "Build an affiliate program"
-./spec-clave --architect claude --reviewer codex "Build an affiliate program"
-./spec-clave --codex-only --effort xhigh "Build an affiliate program"
-./spec-clave --architect claude --reviewer claude --effort max "Build an affiliate program"
-```
-
-Effort is passed to the real provider CLI, not treated as a cosmetic UI value:
-
-- Codex: `low|medium|high|xhigh` through `model_reasoning_effort`.
-- Claude: `low|medium|high|max` through `--effort`.
-- Claude+Codex mixed mode can use shared `low|medium|high`, or split settings:
-  Claude `low|medium|high|max` and Codex `low|medium|high|xhigh`.
-
-Rust TUI, once `cargo` is installed:
-
-```bash
-cargo run -- "Build an affiliate program for a SaaS product"
-```
-
-Or pipe a larger task:
-
-```bash
-pbpaste | cargo run --
-```
-
-Useful flags:
-
-```bash
-cargo run -- --rounds 3 --out .clave "Build an affiliate program"
-cargo run -- --dry-run "Build an affiliate program"
-```
-
-Each run creates a folder under `.clave/` with the draft, review rounds, and
-final decision brief.
-
-## Requirements
-
-- Rust toolchain with `cargo`.
-- Claude Code CLI installed and authenticated.
-- Codex CLI installed and authenticated.
-
-The CLI executable names can be overridden:
-
-```bash
-CLAVE_CLAUDE=/path/to/claude \
-CLAVE_CODEX=/path/to/codex \
-cargo run -- "Plan a referral dashboard"
-```
-
-## MVP Boundary
-
-This is intentionally a CLI-first orchestration kernel for personal use. A
-future desktop app can wrap it with Tauri, add run history, approval screens,
-provider profiles, prompt preset import/export, and a visual agent timeline.
+CLI-first ядро для личного использования. Креды провайдеров не хранятся — каждый
+использует свой локальный логин CLI.
