@@ -47,11 +47,7 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     let result = run_app(&mut terminal);
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -68,20 +64,8 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
 
 pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> AnyResult<()> {
     let mut app = App::new();
-    let mut mouse_applied = false;
 
     loop {
-        // Захват мыши применяется/снимается на лету по /mouse: включён — колесо
-        // скроллит чат; выключен — терминал снова даёт нативное выделение текста.
-        if app.mouse_capture != mouse_applied {
-            let _ = if app.mouse_capture {
-                execute!(terminal.backend_mut(), EnableMouseCapture)
-            } else {
-                execute!(terminal.backend_mut(), DisableMouseCapture)
-            };
-            mouse_applied = app.mouse_capture;
-        }
-
         app.drain_worker_events();
         app.advance_reveal();
         app.expire_footer_notice();
@@ -98,7 +82,6 @@ pub(crate) fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> 
         if event::poll(poll_timeout(app.is_animating()))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
-                Event::Mouse(mouse) => handle_mouse(&mut app, mouse),
                 Event::Resize(_, _) => {}
                 _ => {}
             }
@@ -160,21 +143,6 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    if app.onboarding.is_some() || app.overlay != Overlay::None {
-        return;
-    }
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            app.scroll_offset = (app.scroll_offset + 3).min(app.scroll_ceiling());
-        }
-        MouseEventKind::ScrollDown => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(3);
-        }
-        _ => {}
-    }
-}
-
 pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -214,6 +182,10 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => app.open_search(),
             KeyCode::Left => app.move_word_left(),
             KeyCode::Right => app.move_word_right(),
+            KeyCode::Up => {
+                app.scroll_offset = (app.scroll_offset + 1).min(app.scroll_ceiling());
+            }
+            KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_sub(1),
             KeyCode::Backspace => app.delete_word_back(),
             KeyCode::Delete => app.delete_word_forward(),
             KeyCode::Home => app.cursor = 0,

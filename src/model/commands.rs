@@ -172,12 +172,6 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Открыть настройки моделей, темы и ролей",
     },
     CommandSpec {
-        usage: "/mouse",
-        insert: "/mouse",
-        description_en: "Toggle wheel scroll vs mouse text selection",
-        description_ru: "Переключить скролл колесом / выделение текста мышью",
-    },
-    CommandSpec {
         usage: "/chat-model codex|claude",
         insert: "/chat-model ",
         description_en: "Choose the model for plain messages",
