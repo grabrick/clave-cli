@@ -87,7 +87,12 @@ impl App {
                 self.push_system(line.to_string());
             }
         }
-        self.process_pending_messages();
+        // После прозы — открываем отложенный селектор, иначе берём очередь.
+        if self.ask_prompt_pending.is_some() {
+            self.open_pending_ask();
+        } else {
+            self.process_pending_messages();
+        }
     }
 
     /// Накопленный буфер ответа — сразу в историю (для не-чатовых путей: план, отмена).
@@ -192,12 +197,22 @@ impl App {
                     }
                     // Ответ получен — возвращать в инпут нечего.
                     self.restore_on_cancel = None;
-                    // Запускаем «печать» ответа; пустой ответ → сразу очередь.
-                    if self.reveal_buffer.is_empty() {
-                        self.process_pending_messages();
+                    // Выделяем из ответа запрос выбора (clave-ask): прозу печатаем, блок
+                    // превращаем в селектор. Парсим сырой буфер (find_ask_block срезает
+                    // строку маркера целиком, поэтому префикс «⏺» не мешает).
+                    let full = std::mem::take(&mut self.reveal_buffer).join("\n");
+                    let (prose, ask) = parse_clave_ask(&full);
+                    self.ask_prompt_pending = ask;
+                    if prose.trim().is_empty() {
+                        // Печатать нечего: либо сразу селектор, либо пустой ответ.
+                        if self.ask_prompt_pending.is_some() {
+                            self.open_pending_ask();
+                        } else {
+                            self.process_pending_messages();
+                        }
                     } else {
                         self.reveal = Some(Reveal {
-                            text: std::mem::take(&mut self.reveal_buffer).join("\n"),
+                            text: prose,
                             shown: 0,
                             started: Instant::now(),
                         });
@@ -237,6 +252,7 @@ impl App {
                     self.cancel_tx = None;
                     self.reveal_buffer.clear();
                     self.reveal = None;
+                    self.reset_ask();
                     self.status = self.lang.choose("остановлено", "stopped").to_string();
                     // Чат с «отложенной» репликой отменяем начисто: убираем её из живого
                     // блока (в ленту/скроллбэк она не попала) и возвращаем текст в инпут —
@@ -285,6 +301,7 @@ impl App {
                     self.cancel_tx = None;
                     self.reveal_buffer.clear();
                     self.reveal = None;
+                    self.reset_ask();
                     self.pending_messages.clear();
                     // Не залогинены — реплику не отправили: убираем из живого блока и
                     // возвращаем текст в инпут, чтобы повторить после логина.

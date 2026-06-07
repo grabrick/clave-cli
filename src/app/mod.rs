@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::*;
 
+mod ask;
 mod chats;
 mod commands;
 mod config;
@@ -16,6 +17,7 @@ mod search;
 mod settings;
 mod tandem;
 
+pub(crate) use ask::*;
 pub(crate) use config::*;
 pub(crate) use effort::*;
 pub(crate) use events::*;
@@ -64,6 +66,10 @@ pub(crate) struct App {
     /// живёт в живом блоке, пока идёт ран. На успехе уходит в скроллбэк, на отмене
     /// исчезает без следа (иначе она уже была бы напечатана в нативном скроллбэке).
     pub(crate) live_turn: Option<String>,
+    /// Активный inline-селектор выбора (блок clave-ask от модели) или None.
+    pub(crate) ask: Option<AskState>,
+    /// Разобранный запрос выбора, ждущий завершения «печати» прозы перед показом.
+    pub(crate) ask_prompt_pending: Option<AskPrompt>,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -160,6 +166,8 @@ impl App {
             reveal: None,
             restore_on_cancel: None,
             live_turn: None,
+            ask: None,
+            ask_prompt_pending: None,
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,

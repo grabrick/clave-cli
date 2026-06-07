@@ -29,7 +29,7 @@ impl App {
     /// Запускает следующее сообщение из очереди, если ничего не выполняется и не
     /// открыт гейт плана. Вызывается после завершения рана.
     pub(crate) fn process_pending_messages(&mut self) {
-        if self.running || self.plan_gate_active() {
+        if self.running || self.plan_gate_active() || self.ask_active() {
             return;
         }
         if let Some(next) = self.pending_messages.pop_front() {

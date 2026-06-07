@@ -51,14 +51,30 @@ pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language, mode: Ch
         "Reply in English unless the user asks for another language.",
     );
     let mode_hint = mode.prompt_hint(lang);
+    let ask_hint = lang.choose(
+        "Если для продолжения нужен выбор пользователя, можешь в САМОМ КОНЦЕ ответа вывести \
+         ровно один блок ```clave-ask с JSON: {\"question\":\"...\",\"multi\":false,\
+         \"options\":[{\"label\":\"...\",\"note\":\"...\"}]}. Минимум 2 варианта, label кратко, \
+         note — необязательная подсказка, multi=true если можно выбрать несколько. Блок — \
+         последнее в ответе; после него ничего не пиши и не отвечай за пользователя. \
+         Используй редко — только когда выбор действительно нужен.",
+        "If you need the user to choose before continuing, you MAY end your answer with \
+         exactly one ```clave-ask block of JSON: {\"question\":\"...\",\"multi\":false,\
+         \"options\":[{\"label\":\"...\",\"note\":\"...\"}]}. At least 2 options, short labels, \
+         optional note, multi=true to allow several. The block must be the very last thing — \
+         write nothing after it and do not answer for the user. Use sparingly, only when a \
+         choice is genuinely needed.",
+    );
     format!(
         "You are {APP_NAME}, an AI assistant inside a terminal UI.\n\
          {mode_hint}\n\
          Keep your final answer concise and useful. {language_hint}\n\n\
+         {ask_hint}\n\n\
          Recent chat context:\n{context}\n\n\
          User message:\n{message}",
         mode_hint = mode_hint,
         language_hint = language_hint,
+        ask_hint = ask_hint,
         context = if context.trim().is_empty() {
             "(empty)"
         } else {
