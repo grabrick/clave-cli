@@ -60,22 +60,46 @@ def main() -> int:
     def visible(needle):
         return any(needle in row for row in screen.display)
 
+    # Футер уникален: на ОДНОЙ строке и «Shift+Tab», и «команды»/«commands». Панель
+    # подсказок тоже перечисляет «Shift+Tab», поэтому одного слова недостаточно.
+    def footer_shown():
+        return any(
+            "Shift+Tab" in r and ("команды" in r or "commands" in r)
+            for r in screen.display
+        )
+
+    # Между нижней линейкой композера и футером должна быть пустая строка-отступ.
+    def gap_before_footer():
+        disp = [r.rstrip() for r in screen.display]
+        inp = next((i for i, r in enumerate(disp) if "›" in r), None)
+        foot = next(
+            (i for i, r in enumerate(disp) if "Shift+Tab" in r and ("команды" in r or "commands" in r)),
+            None,
+        )
+        return inp is not None and foot is not None and (foot - inp) >= 3 and disp[foot - 1] == ""
+
     pump(1.2)
+    footer_idle = footer_shown()
+    gap_idle = gap_before_footer()
     opened = []
+    footer_hidden_on_palette = []
     idles = []
     for _ in range(5):
         send("/")
         pump(0.35)
         opened.append(visible("/brainstorming") or visible("/help") or visible("/btw"))
+        footer_hidden_on_palette.append(not footer_shown())  # футер прячется под палитрой
         send("\x7f")  # стереть '/'
         pump(0.35)
         idles.append(snap())
     send("?")
     pump(0.35)
     shortcuts_open = visible("Управление") or visible("Controls")
+    footer_hidden_on_shortcuts = not footer_shown()  # и под подсказками тоже
     send("\x1b")  # Esc
     pump(0.35)
     shortcuts_closed = not (visible("Управление") or visible("Controls"))
+    footer_back = footer_shown()
     send("/quit\r")
     pump(0.8)
 
@@ -102,6 +126,11 @@ def main() -> int:
         "подсказки '?' открываются": shortcuts_open,
         "Esc закрывает подсказки": shortcuts_closed,
         "idle стабилен (нет накопления)": stable,
+        "футер виден в простое": footer_idle,
+        "отступ перед футером (воздух)": gap_idle,
+        "футер прячется под палитрой (5/5)": all(footer_hidden_on_palette),
+        "футер прячется под подсказками": footer_hidden_on_shortcuts,
+        "футер возвращается после Esc": footer_back,
         "чистый выход /quit": code == 0,
     }
     for name, ok in checks.items():
