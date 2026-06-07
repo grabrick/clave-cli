@@ -56,6 +56,10 @@ pub(crate) struct TerminalGuard;
 impl TerminalGuard {
     pub(crate) fn new() -> io::Result<Self> {
         enable_raw_mode()?;
+        // Bracketed paste: терминал оборачивает вставку в маркеры и crossterm отдаёт
+        // её одним Event::Paste — иначе переносы строк в тексте приходят как Enter и
+        // дробят вставку на несколько отправок.
+        let _ = execute!(io::stdout(), EnableBracketedPaste);
         Ok(Self)
     }
 }
@@ -63,7 +67,12 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(
+            io::stdout(),
+            DisableBracketedPaste,
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
     }
 }
 
@@ -132,10 +141,14 @@ pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<(
         }
 
         if event::poll(poll_timeout(app.is_animating()))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    handle_key(app, key);
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(app, key),
+                // Вставка целиком (с переносами) идёт в инпут, а не дробится на отправки.
+                Event::Paste(text) => {
+                    app.finish_reveal_now();
+                    app.paste_into_input(&text);
                 }
+                _ => {}
             }
         }
 
@@ -284,6 +297,8 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
 
     if alt {
         match key.code {
+            // Alt/Option+Enter — перенос строки (надёжно различается во всех терминалах).
+            KeyCode::Enter => app.insert_newline(),
             KeyCode::Left | KeyCode::Char('b') => app.move_word_left(),
             KeyCode::Right | KeyCode::Char('f') => app.move_word_right(),
             KeyCode::Backspace => app.delete_word_back(),
@@ -294,6 +309,9 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
     }
 
     match key.code {
+        // Shift+Enter — перенос строки (где терминал сообщает модификатор); обычный
+        // Enter отправляет. Ещё варианты переноса: Alt/Option+Enter и Ctrl+J.
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => app.insert_newline(),
         KeyCode::Enter => app.submit_input(),
         KeyCode::Tab => app.complete_command(),
         KeyCode::BackTab => app.chat_mode = app.chat_mode.next(),

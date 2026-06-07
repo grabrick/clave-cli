@@ -57,6 +57,9 @@ pub(crate) struct App {
     pub(crate) reveal_buffer: Vec<String>,
     /// Активная плавная отрисовка ответа («печатная машинка») или None.
     pub(crate) reveal: Option<Reveal>,
+    /// Текст текущего чат-запроса — чтобы при отмене (Ctrl+C) вернуть его в инпут,
+    /// а не потерять. Ставится при старте чата, снимается по завершении.
+    pub(crate) restore_on_cancel: Option<String>,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -151,6 +154,7 @@ impl App {
             pending_clear_screen: false,
             reveal_buffer: Vec::new(),
             reveal: None,
+            restore_on_cancel: None,
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,

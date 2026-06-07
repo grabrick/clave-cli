@@ -38,6 +38,8 @@ impl App {
     }
 
     pub(crate) fn start_chat_with_prompt(&mut self, display_message: String, message: String) {
+        // Запоминаем исходный текст: при отмене (Ctrl+C) вернём его в инпут.
+        self.restore_on_cancel = Some(message.clone());
         let context = recent_chat_context(&self.transcript, 40);
         let prompt = chat_prompt(&message, &context, self.lang, self.chat_mode);
         self.run_provider_chat(

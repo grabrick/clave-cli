@@ -29,9 +29,9 @@ pub(crate) const SHORTCUTS: &[ShortcutSpec] = &[
         en: "send",
     },
     ShortcutSpec {
-        keys: "Ctrl+J",
-        ru: "новая строка",
-        en: "newline",
+        keys: "Shift/Alt+Enter",
+        ru: "новая строка (или Ctrl+J)",
+        en: "newline (or Ctrl+J)",
     },
     ShortcutSpec {
         keys: "Tab",
