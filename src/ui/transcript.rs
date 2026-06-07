@@ -26,7 +26,10 @@ pub(crate) fn transcript_entry_lines_with_state(
 ) -> Vec<Line<'static>> {
     if let Some(message) = line.strip_prefix("◆ ") {
         state.in_code_block = false;
-        return user_message_box(message, lang, width, theme);
+        // Пустая строка перед репликой пользователя — отделяет ход от предыдущего.
+        let mut out = vec![Line::from("")];
+        out.extend(user_message_box(message, lang, width, theme));
+        return out;
     }
 
     if is_markdown_fence(line) {
@@ -38,10 +41,17 @@ pub(crate) fn transcript_entry_lines_with_state(
         return code_block_lines(line, width, theme);
     }
 
-    wrap_terminal_line(line, width)
-        .into_iter()
-        .map(|wrapped| style_transcript_line(&wrapped, lang, theme))
-        .collect()
+    // Воздух перед началом ответа (⏺) и эхо команды (❯), чтобы реплики не слипались.
+    let mut out = Vec::new();
+    if line.starts_with("⏺ ") || line.starts_with("❯ ") {
+        out.push(Line::from(""));
+    }
+    out.extend(
+        wrap_terminal_line(line, width)
+            .into_iter()
+            .map(|wrapped| style_transcript_line(&wrapped, lang, theme)),
+    );
+    out
 }
 
 pub(crate) fn user_message_box(

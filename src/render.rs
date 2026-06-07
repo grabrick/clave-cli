@@ -141,17 +141,24 @@ impl LiveRenderer {
         Ok(())
     }
 
-    /// Перед внешней командой / выходом: увести курсор под блок на чистую строку,
-    /// чтобы дальнейший вывод не затирал живой блок.
+    /// Перед внешней командой / выходом: СТИРАЕТ живой блок целиком, оставляя на
+    /// экране только историю диалога. На выходе из приложения под ней встаёт
+    /// чистый shell-промт (без остатков поля ввода/футера); перед внешней командой
+    /// её вывод печатается на месте блока, а блок потом перерисуется (invalidate).
     pub(crate) fn leave_below(&mut self) -> io::Result<()> {
         if !self.started {
             return Ok(());
         }
         let mut out = io::stdout().lock();
+        // встать на нижнюю строку блока → на верх блока → стереть от курсора вниз
         if self.cursor_above > 0 {
             queue!(out, MoveDown(self.cursor_above))?;
         }
-        queue!(out, MoveToColumn(0), Print("\r\n"))?;
+        queue!(out, MoveToColumn(0))?;
+        if self.prev_height > 1 {
+            queue!(out, MoveUp(self.prev_height - 1))?;
+        }
+        queue!(out, Clear(ClearType::FromCursorDown), Show)?;
         out.flush()?;
         self.started = false;
         self.prev_height = 0;
