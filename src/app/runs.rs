@@ -88,7 +88,14 @@ impl App {
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
-        self.push_system(display);
+        // Чат: реплику держим в живом блоке (live_turn), а не в ленте — чтобы при
+        // отмене её можно было убрать без следа (в ленте она уже ушла бы в
+        // нативный скроллбэк). План показываем сразу, как раньше.
+        if planning {
+            self.push_system(display);
+        } else {
+            self.live_turn = Some(display);
+        }
 
         let tx = self.tx.clone();
         thread::spawn(move || {
