@@ -42,18 +42,11 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     let mut app = App::new();
     if app.transcript.is_empty() {
         // Пустой старт → приветственный блок прямо в ленту (в файл не пишется,
-        // т.к. не идёт через push_system; покажется в нижнем регионе).
+        // т.к. не идёт через push_system; покажется в живом блоке).
         app.transcript = welcome_lines(&app);
     }
-    let (_, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
-    let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(live_viewport_height(full_h)),
-        },
-    )?;
-    run_app(&mut terminal, &mut app)
+    let mut renderer = LiveRenderer::new();
+    run_app(&mut app, &mut renderer)
 }
 
 /// RAII: гарантированно снимает raw mode и сбрасывает терминал (alt-screen, mouse —
@@ -116,92 +109,7 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
     }
 }
 
-/// Сколько передних строк-групп вытеснить в скроллбэк, чтобы остаток помещался в
-/// `cap` строк (последнюю группу не трогаем — в ленте всегда что-то остаётся).
-fn overflow_flush_count(group_lens: &[usize], cap: usize) -> usize {
-    let mut total: usize = group_lens.iter().sum();
-    let mut flushed = 0;
-    while total > cap && flushed + 1 < group_lens.len() {
-        total -= group_lens[flushed];
-        flushed += 1;
-    }
-    flushed
-}
-
-/// Вытесняет в НАТИВНЫЙ скроллбэк (через `insert_before`) строки, не влезающие в
-/// живой хвост (`cap` строк), и возвращает уже отрендеренный хвост для отрисовки.
-/// Вытеснение происходит ТОЛЬКО от новой истории (cap не зависит от панелей),
-/// поэтому открытие палитры/подсказок ничего не двигает — панель рисуется поверх.
-fn flush_overflow(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-    width: u16,
-    cap: u16,
-) -> io::Result<Vec<Line<'static>>> {
-    let cap = cap.max(1) as usize;
-    // Рендерим хвост один раз; state — клон границы (не мутируем её зря).
-    let mut state = app.flush_state;
-    let groups: Vec<Vec<Line<'static>>> = app.transcript[app.scrollback_count..]
-        .iter()
-        .map(|line| history_line_render(line, app.lang, width, app.theme, &mut state))
-        .collect();
-
-    let lens: Vec<usize> = groups.iter().map(Vec::len).collect();
-    let flushed = overflow_flush_count(&lens, cap);
-
-    // Собираем вытесняемое заранее (строки + исходный текст), чтобы не держать
-    // borrow на transcript во время insert_before и сдвига flush_state.
-    let base = app.scrollback_count;
-    let to_flush: Vec<(Vec<Line<'static>>, String)> = groups
-        .iter()
-        .take(flushed)
-        .enumerate()
-        .map(|(offset, rows)| (rows.clone(), app.transcript[base + offset].clone()))
-        .collect();
-    for (rows, source) in to_flush {
-        if !rows.is_empty() {
-            let height = rows.len() as u16;
-            terminal.insert_before(height, move |buf| {
-                Paragraph::new(rows)
-                    .wrap(Wrap { trim: false })
-                    .render(buf.area, buf);
-            })?;
-        }
-        // Двигаем реальную границу состояния через вытесненную строку.
-        let _ = history_line_render(&source, app.lang, width, app.theme, &mut app.flush_state);
-    }
-    app.scrollback_count += flushed;
-
-    let mut tail: Vec<Line<'static>> = groups[flushed..].iter().flatten().cloned().collect();
-    if tail.len() > cap {
-        tail.drain(0..tail.len() - cap);
-    }
-    Ok(tail)
-}
-
-/// Пересоздаёт inline-viewport заданной высоты. Высота живого региона фиксирована
-/// за сессию, поэтому это вызывается РЕДКО — только при ресайзе окна и при выходе
-/// из полноэкранной модалки (не на каждый кадр), так что разовый скролл при
-/// пересоздании не накапливается.
-fn create_inline_viewport(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    height: u16,
-) -> io::Result<()> {
-    let backend = CrosstermBackend::new(io::stdout());
-    *terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(height.max(1)),
-        },
-    )?;
-    Ok(())
-}
-
-pub(crate) fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> AnyResult<()> {
-    let (mut last_w, mut last_h) = crossterm::terminal::size().unwrap_or((80, 24));
+pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<()> {
     loop {
         app.drain_worker_events();
         app.expire_footer_notice();
@@ -209,29 +117,16 @@ pub(crate) fn run_app(
         app.refresh_footer_right_state();
 
         let (width, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
-        if width != last_w || full_h != last_h {
-            // Окно терминала изменилось — пересоздаём живой регион новой высоты.
-            create_inline_viewport(terminal, live_viewport_height(full_h))?;
-            last_w = width;
-            last_h = full_h;
-        }
-
-        // Ёмкость хвоста = живой регион минус композер и футер. От панелей НЕ
-        // зависит (панель рисуется поверх хвоста), поэтому их открытие не вытесняет.
-        let live_h = live_viewport_height(full_h);
-        let body_cap = live_h
-            .saturating_sub(composer_height(app, width))
-            .saturating_sub(1);
-        let tail = flush_overflow(terminal, app, width, body_cap)?;
-
-        terminal.draw(|frame| draw_viewport(frame, app, &tail))?;
+        renderer.render(app, width, full_h)?;
 
         if app.should_quit {
+            renderer.leave_below()?;
             return Ok(());
         }
 
         if app.onboarding.is_some() || app.overlay.is_modal() {
-            run_modal(terminal, app)?;
+            run_modal(app)?;
+            renderer.invalidate(); // экран мог измениться — перерисуем блок целиком
             continue;
         }
 
@@ -244,66 +139,48 @@ pub(crate) fn run_app(
         }
 
         if let Some(command) = app.pending_external.take() {
-            run_external_inline(terminal, app, command)?;
+            renderer.leave_below()?; // увести вывод команды под живой блок
+            run_external_inline(app, command)?;
+            renderer.invalidate();
         }
     }
 }
 
-/// Полноэкранная модалка (effort/settings/chats/onboarding) во временном alt-screen,
-/// пока она активна; на выходе — возврат в inline (инвариант 4).
-fn run_modal(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> AnyResult<()> {
-    // Inline-viewport нельзя растянуть на весь экран через resize() (для inline это
-    // no-op по высоте), поэтому на время модалки пересоздаём терминал во Fullscreen
-    // во временном alt-screen.
+/// Полноэкранная модалка (effort/settings/chats/onboarding) во временном alt-screen
+/// со своим Fullscreen-терминалом; живой блок основного экрана сохраняется alt-screen'ом.
+fn run_modal(app: &mut App) -> AnyResult<()> {
     execute!(io::stdout(), EnterAlternateScreen)?;
-    {
-        let backend = CrosstermBackend::new(io::stdout());
-        *terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Fullscreen,
-            },
-        )?;
-    }
-
-    while app.onboarding.is_some() || app.overlay.is_modal() {
-        app.drain_worker_events();
-        terminal.draw(|frame| draw_modal(frame, app))?;
-        if app.should_quit {
-            break;
-        }
-        if event::poll(poll_timeout(app.is_animating()))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    handle_key(app, key);
+    let result = (|| -> AnyResult<()> {
+        let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+        while app.onboarding.is_some() || app.overlay.is_modal() {
+            app.drain_worker_events();
+            terminal.draw(|frame| draw_modal(frame, app))?;
+            if app.should_quit {
+                break;
+            }
+            if event::poll(poll_timeout(app.is_animating()))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        handle_key(app, key);
+                    }
                 }
             }
+            if let Some(command) = app.pending_external.take() {
+                run_external_inline(app, command)?;
+            }
         }
-        if let Some(command) = app.pending_external.take() {
-            run_external_inline(terminal, app, command)?;
-        }
-    }
-
-    // Возврат на основной экран и пересоздание живого региона фиксированной высоты.
-    execute!(io::stdout(), LeaveAlternateScreen)?;
-    let (_, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
-    create_inline_viewport(terminal, live_viewport_height(full_h))?;
-    Ok(())
+        Ok(())
+    })();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    result
 }
 
-fn run_external_inline(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-    command: ExternalCommand,
-) -> AnyResult<()> {
+fn run_external_inline(app: &mut App, command: ExternalCommand) -> AnyResult<()> {
     let label = app
         .lang
         .choose(command.label_ru, command.label_en)
         .to_string();
-    match run_external_command(terminal, &command) {
+    match run_external_command(&command) {
         Ok(code) => {
             let mode = app.mode;
             let lang = app.lang;
@@ -716,18 +593,6 @@ mod tests {
         assert!(poll_timeout(true) < poll_timeout(false));
         assert_eq!(poll_timeout(true), Duration::from_millis(16));
         assert_eq!(poll_timeout(false), Duration::from_millis(100));
-    }
-
-    #[test]
-    fn overflow_flush_count_keeps_tail_within_cap() {
-        // Всё помещается → ничего не вытесняем.
-        assert_eq!(overflow_flush_count(&[1, 1, 1], 3), 0);
-        // 5 строк, cap 3 → вытеснить две передние, оставить три.
-        assert_eq!(overflow_flush_count(&[1, 1, 1, 1, 1], 3), 2);
-        // Последнюю группу не трогаем — в ленте всегда что-то остаётся.
-        assert_eq!(overflow_flush_count(&[10], 3), 0);
-        // Многострочные группы считаются по строкам.
-        assert_eq!(overflow_flush_count(&[2, 2, 2], 3), 2);
     }
 
     #[test]

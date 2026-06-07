@@ -23,6 +23,6 @@ pub(crate) use ratatui::{
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
-    Frame, Terminal, TerminalOptions, Viewport,
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    Frame, Terminal,
 };

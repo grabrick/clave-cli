@@ -134,13 +134,10 @@ pub(crate) fn first_nonempty_line(text: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
-pub(crate) fn run_external_command(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    command: &ExternalCommand,
-) -> AnyResult<i32> {
+pub(crate) fn run_external_command(command: &ExternalCommand) -> AnyResult<i32> {
+    // Живой блок инлайн (без alt-screen): просто отпускаем raw-режим и пишем под ним.
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    execute!(io::stdout(), crossterm::cursor::Show)?;
 
     println!();
     println!(
@@ -164,9 +161,6 @@ pub(crate) fn run_external_command(
     let mut wait = String::new();
     let _ = io::stdin().read_line(&mut wait);
 
-    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
     enable_raw_mode()?;
-    terminal.clear()?;
-
     Ok(code)
 }
