@@ -60,6 +60,10 @@ pub(crate) struct App {
     /// Текст текущего чат-запроса — чтобы при отмене (Ctrl+C) вернуть его в инпут,
     /// а не потерять. Ставится при старте чата, снимается по завершении.
     pub(crate) restore_on_cancel: Option<String>,
+    /// Реплика пользователя текущего чат-рана («◆ …»), НЕ зафиксированная в ленте:
+    /// живёт в живом блоке, пока идёт ран. На успехе уходит в скроллбэк, на отмене
+    /// исчезает без следа (иначе она уже была бы напечатана в нативном скроллбэке).
+    pub(crate) live_turn: Option<String>,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -155,6 +159,7 @@ impl App {
             reveal_buffer: Vec::new(),
             reveal: None,
             restore_on_cancel: None,
+            live_turn: None,
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,

@@ -219,20 +219,29 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     let room = full_h
         .saturating_sub(1) // оставить хотя бы строку под историю/скроллбэк
         .saturating_sub(reserved);
-    // Верхний слот над вводом (область диалога): «печать» ответа (reveal) во время
-    // плавной отрисовки, иначе loader прогона.
-    let mut top: Vec<Line<'static>> = if let Some(reveal) = &app.reveal {
+    // Верхний слот над вводом (область диалога): реплика пользователя текущего рана
+    // (live_turn, ещё не в ленте) сверху, под ней «печать» ответа (reveal) или loader.
+    let mut top: Vec<Line<'static>> = Vec::new();
+    if let Some(turn) = &app.live_turn {
+        let mut state = TranscriptRenderState::default();
+        let mut turn_lines = history_line_render(turn, app.lang, width, app.theme, &mut state);
+        // ведущую пустую строку из бокса убираем — воздух уже даёт gap_top
+        if turn_lines.first().is_some_and(|line| line.width() == 0) {
+            turn_lines.remove(0);
+        }
+        top.extend(turn_lines);
+    }
+    if let Some(reveal) = &app.reveal {
         let shown = reveal.shown_text();
         let mut state = TranscriptRenderState::default();
-        shown
-            .split('\n')
-            .flat_map(|line| history_line_render(line, app.lang, width, app.theme, &mut state))
-            .collect()
+        top.extend(
+            shown
+                .split('\n')
+                .flat_map(|line| history_line_render(line, app.lang, width, app.theme, &mut state)),
+        );
     } else if app.running {
-        loader_lines(app, width)
-    } else {
-        Vec::new()
-    };
+        top.extend(loader_lines(app, width));
+    }
     let top_h = (top.len() as u16).min(room);
     // Если reveal длиннее окна — показываем хвост (низ), как стрим в терминале.
     let top_tail: Vec<Line<'static>> = top.split_off(top.len() - top_h as usize);

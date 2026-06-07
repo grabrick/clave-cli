@@ -176,6 +176,11 @@ impl App {
                     } else {
                         format!("{}:{code}", self.lang.choose("ошибка", "failed"))
                     };
+                    // Ран завершился: фиксируем реплику пользователя в ленте (теперь
+                    // уедет в нативный скроллбэк), до строк ответа/ошибки.
+                    if let Some(turn) = self.live_turn.take() {
+                        self.push_system(turn);
+                    }
                     if code != 0 {
                         self.push_system(format!(
                             "{} {} {}.",
@@ -233,10 +238,17 @@ impl App {
                     self.reveal_buffer.clear();
                     self.reveal = None;
                     self.status = self.lang.choose("остановлено", "stopped").to_string();
-                    self.push_system(
-                        self.lang
-                            .choose("⏹ Выполнение остановлено.", "⏹ Run stopped."),
-                    );
+                    // Чат с «отложенной» репликой отменяем начисто: убираем её из живого
+                    // блока (в ленту/скроллбэк она не попала) и возвращаем текст в инпут —
+                    // без следа в диалоге. Для плана/движка (реплика уже в ленте) оставляем
+                    // пометку об остановке.
+                    let undone_chat = self.live_turn.take().is_some();
+                    if !undone_chat {
+                        self.push_system(
+                            self.lang
+                                .choose("⏹ Выполнение остановлено.", "⏹ Run stopped."),
+                        );
+                    }
                     // Возвращаем неотправленный текст (текущий запрос + очередь) в инпут,
                     // чтобы случайную отмену можно было поправить и отправить заново.
                     let mut restore: Vec<String> =
@@ -255,6 +267,10 @@ impl App {
                     self.run_token_estimate = None;
                     self.cancel_tx = None;
                     self.restore_on_cancel = None;
+                    // Реплику фиксируем в ленте — ран дошёл до ошибки, это след попытки.
+                    if let Some(turn) = self.live_turn.take() {
+                        self.push_system(turn);
+                    }
                     self.flush_reveal_buffer();
                     self.status = self.lang.choose("ошибка", "failed").to_string();
                     self.push_system(message);
@@ -270,7 +286,16 @@ impl App {
                     self.reveal_buffer.clear();
                     self.reveal = None;
                     self.pending_messages.clear();
-                    self.restore_on_cancel = None;
+                    // Не залогинены — реплику не отправили: убираем из живого блока и
+                    // возвращаем текст в инпут, чтобы повторить после логина.
+                    self.live_turn = None;
+                    if let Some(text) = self.restore_on_cancel.take() {
+                        if self.input.trim().is_empty() {
+                            self.input = text;
+                            self.cursor = self.input.len();
+                            self.history_index = None;
+                        }
+                    }
                     if let Some(provider) = Provider::from_str(provider) {
                         self.prompt_provider_login(provider);
                     }
