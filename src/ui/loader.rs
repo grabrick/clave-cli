@@ -45,21 +45,26 @@ pub(crate) fn loader_lines(app: &App, width: u16) -> Vec<Line<'static>> {
 }
 
 pub(crate) fn loader_activity_lines(app: &App, width: u16) -> Vec<Line<'static>> {
-    let content_width = width.saturating_sub(5).max(1);
-    let mut lines = Vec::new();
-
-    for activity in &app.run_activity {
-        let wrapped = wrap_terminal_line(activity, content_width);
-        for (index, line) in wrapped.into_iter().enumerate() {
-            let prefix = if index == 0 { "  ⎿ " } else { "    " };
-            lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(app.theme.accent_dim())),
-                Span::styled(line, Style::default().fg(Color::Indexed(245))),
-            ]));
-        }
-    }
-
-    lines
+    let content_width = width.saturating_sub(5).max(1) as usize;
+    // По ОДНОЙ строке на активность и не более трёх последних: высота loader
+    // должна быть предсказуемой. Иначе при каждом апдейте активности менялась бы
+    // высота viewport, а его смена в inline-режиме = пересоздание терминала
+    // (скролл-дрожь во время прогона).
+    const MAX_ACTIVITY_LINES: usize = 3;
+    let skip = app.run_activity.len().saturating_sub(MAX_ACTIVITY_LINES);
+    app.run_activity
+        .iter()
+        .skip(skip)
+        .map(|activity| {
+            Line::from(vec![
+                Span::styled("  ⎿ ", Style::default().fg(app.theme.accent_dim())),
+                Span::styled(
+                    truncate_chars(activity, content_width),
+                    Style::default().fg(Color::Indexed(245)),
+                ),
+            ])
+        })
+        .collect()
 }
 
 pub(crate) fn theme_shimmer_text_spans(text: &str, theme: Theme, tick: u64) -> Vec<Span<'static>> {

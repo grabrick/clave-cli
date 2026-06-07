@@ -148,14 +148,40 @@ fn flush_history(
     Ok(())
 }
 
-fn resize_inline_viewport(
+/// Меняет высоту живого inline-viewport. ratatui 0.30 НЕ умеет ресайзить inline
+/// через `resize()` — высота зашита в `Viewport::Inline` при создании, поэтому
+/// пересоздаём терминал. Старый viewport стираем (от его верха вниз), чтобы он не
+/// «вмёрз» в историю. Якорь нового — у нижнего края: при росте курсор уводим в
+/// самый низ (история проскроллится вверх, освобождая место), при сжатии ставим
+/// курсор на верх нового viewport (без скролла — сверху останется временный
+/// зазор, который затрётся следующей строкой истории или результатом прогона).
+fn rebuild_inline_viewport(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    height: u16,
+    old_h: u16,
+    new_h: u16,
 ) -> io::Result<()> {
-    let size = terminal.size()?;
-    let h = height.min(size.height).max(1);
-    let y = size.height.saturating_sub(h);
-    terminal.resize(Rect::new(0, y, size.width, h))
+    let (_, full_h) = crossterm::terminal::size()?;
+    let new_h = new_h.min(full_h).max(1);
+    let old_top = full_h.saturating_sub(old_h.min(full_h));
+    let anchor_y = if new_h >= old_h {
+        full_h.saturating_sub(1)
+    } else {
+        full_h.saturating_sub(new_h)
+    };
+    execute!(
+        io::stdout(),
+        crossterm::cursor::MoveTo(0, old_top),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
+        crossterm::cursor::MoveTo(0, anchor_y),
+    )?;
+    let backend = CrosstermBackend::new(io::stdout());
+    *terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(new_h),
+        },
+    )?;
+    Ok(())
 }
 
 pub(crate) fn run_app(
@@ -174,7 +200,7 @@ pub(crate) fn run_app(
 
         let want = desired_viewport_height(app, width);
         if want != viewport_h {
-            resize_inline_viewport(terminal, want)?;
+            rebuild_inline_viewport(terminal, viewport_h, want)?;
             viewport_h = want;
         }
 
@@ -210,9 +236,19 @@ fn run_modal(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> AnyResult<()> {
-    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
-    let full = terminal.size()?;
-    terminal.resize(Rect::new(0, 0, full.width, full.height))?;
+    // Inline-viewport нельзя растянуть на весь экран через resize() (для inline это
+    // no-op по высоте), поэтому на время модалки пересоздаём терминал во Fullscreen
+    // во временном alt-screen.
+    execute!(io::stdout(), EnterAlternateScreen)?;
+    {
+        let backend = CrosstermBackend::new(io::stdout());
+        *terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Fullscreen,
+            },
+        )?;
+    }
 
     while app.onboarding.is_some() || app.overlay.is_modal() {
         app.drain_worker_events();
@@ -232,9 +268,15 @@ fn run_modal(
         }
     }
 
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    resize_inline_viewport(terminal, desired_viewport_height(app, terminal_width()))?;
-    terminal.clear()?;
+    // Возврат на основной экран и пересоздание inline-viewport нужной высоты.
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    let backend = CrosstermBackend::new(io::stdout());
+    *terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(desired_viewport_height(app, terminal_width())),
+        },
+    )?;
     Ok(())
 }
 
