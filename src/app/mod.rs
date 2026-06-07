@@ -50,6 +50,9 @@ pub(crate) struct App {
     /// Состояние рендера (code-block) на границе вытеснения — чтобы хвост
     /// рисовался с корректной подсветкой, не пересчитывая всю историю.
     pub(crate) flush_state: TranscriptRenderState,
+    /// Запрос на полную очистку терминала (экран + нативный скроллбэк): ставится
+    /// при сбросе ленты (/clear, /new, /resume), исполняется рендером.
+    pub(crate) pending_clear_screen: bool,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -141,6 +144,7 @@ impl App {
             transcript,
             scrollback_count: 0,
             flush_state: TranscriptRenderState::default(),
+            pending_clear_screen: false,
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,

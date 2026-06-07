@@ -211,5 +211,8 @@ impl App {
     pub(crate) fn reset_scrollback(&mut self) {
         self.scrollback_count = 0;
         self.flush_state = TranscriptRenderState::default();
+        // Уже напечатанную историю из нативного скроллбэка иначе не убрать —
+        // просим рендер полностью очистить терминал (экран + скроллбэк).
+        self.pending_clear_screen = true;
     }
 }
