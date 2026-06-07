@@ -12,6 +12,19 @@ impl App {
         self.insert_char('\n');
     }
 
+    /// Вставка текста (bracketed paste): целиком на место курсора, с переносами
+    /// строк и БЕЗ отправки. `\r\n` и одиночные `\r` нормализуем в `\n`.
+    pub(crate) fn paste_into_input(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if normalized.is_empty() {
+            return;
+        }
+        self.input.insert_str(self.cursor, &normalized);
+        self.cursor += normalized.len();
+        self.history_index = None;
+        self.selected_suggestion = 0;
+    }
+
     pub(crate) fn backspace(&mut self) {
         if self.cursor == 0 {
             return;

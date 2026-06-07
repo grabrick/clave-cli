@@ -185,6 +185,8 @@ impl App {
                             code
                         ));
                     }
+                    // Ответ получен — возвращать в инпут нечего.
+                    self.restore_on_cancel = None;
                     // Запускаем «печать» ответа; пустой ответ → сразу очередь.
                     if self.reveal_buffer.is_empty() {
                         self.process_pending_messages();
@@ -235,8 +237,16 @@ impl App {
                         self.lang
                             .choose("⏹ Выполнение остановлено.", "⏹ Run stopped."),
                     );
-                    // Отмена очищает очередь — пользователь нажал стоп.
-                    self.pending_messages.clear();
+                    // Возвращаем неотправленный текст (текущий запрос + очередь) в инпут,
+                    // чтобы случайную отмену можно было поправить и отправить заново.
+                    let mut restore: Vec<String> =
+                        self.restore_on_cancel.take().into_iter().collect();
+                    restore.extend(self.pending_messages.drain(..));
+                    if !restore.is_empty() && self.input.trim().is_empty() {
+                        self.input = restore.join("\n");
+                        self.cursor = self.input.len();
+                        self.history_index = None;
+                    }
                 }
                 WorkerEvent::Failed(message) => {
                     self.running = false;
@@ -244,6 +254,7 @@ impl App {
                     self.run_label.clear();
                     self.run_token_estimate = None;
                     self.cancel_tx = None;
+                    self.restore_on_cancel = None;
                     self.flush_reveal_buffer();
                     self.status = self.lang.choose("ошибка", "failed").to_string();
                     self.push_system(message);
@@ -259,6 +270,7 @@ impl App {
                     self.reveal_buffer.clear();
                     self.reveal = None;
                     self.pending_messages.clear();
+                    self.restore_on_cancel = None;
                     if let Some(provider) = Provider::from_str(provider) {
                         self.prompt_provider_login(provider);
                     }
