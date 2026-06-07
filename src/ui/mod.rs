@@ -34,16 +34,9 @@ pub(crate) use transcript::*;
 /// Сколько строк показывает палитра команд (самая высокая панель).
 pub(crate) const COMMAND_PALETTE_ROWS: u16 = 12;
 
-/// Активна ли под-композерная панель (палитра/подсказки/поиск/гейт).
-pub(crate) fn panel_active(app: &App) -> bool {
-    normalized_command_query(&app.input).is_some()
-        || app.overlay == Overlay::Shortcuts
-        || app.overlay == Overlay::Search
-        || app.plan_gate_active()
-}
-
-/// Высота нижнего элемента живого блока (панель или loader), обрезанная по месту.
-pub(crate) fn body_bottom_height(app: &App, width: u16, body: u16) -> u16 {
+/// Высота под-футерной панели (палитра/подсказки/поиск/гейт), обрезанная по месту.
+/// Loader сюда НЕ входит — он рисуется над вводом (в области диалога), не под футером.
+pub(crate) fn panel_height(app: &App, width: u16, cap: u16) -> u16 {
     let height = if normalized_command_query(&app.input).is_some() {
         COMMAND_PALETTE_ROWS
     } else if app.overlay == Overlay::Shortcuts {
@@ -52,12 +45,10 @@ pub(crate) fn body_bottom_height(app: &App, width: u16, body: u16) -> u16 {
         search_panel_height()
     } else if app.plan_gate_active() {
         plan_gate_panel_height()
-    } else if app.running {
-        loader_lines(app, width).len() as u16
     } else {
         0
     };
-    height.min(body)
+    height.min(cap)
 }
 
 pub(crate) fn draw_active_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {

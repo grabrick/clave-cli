@@ -90,8 +90,13 @@ def main() -> int:
         code = -1
 
     # Идл-экраны после каждого закрытия должны совпадать — это и есть «нет
-    # накопления/дрейфа» (первый кадр не считаем: он мог быть полноэкранным).
-    stable = all(state == idles[0] for state in idles)
+    # накопления/дрейфа». Строку футера исключаем: её правый сегмент
+    # (roles/mode/chat/theme/effort) вращается по времени и к стабильности ленты
+    # отношения не имеет.
+    def idle_key(state):
+        return tuple(r for r in state if "Shift+Tab" not in r)
+
+    stable = all(idle_key(state) == idle_key(idles[0]) for state in idles)
     checks = {
         "палитра открывается (5/5)": all(opened),
         "подсказки '?' открываются": shortcuts_open,

@@ -170,8 +170,15 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     let room = full_h
         .saturating_sub(1) // оставить хотя бы строку под историю/скроллбэк
         .saturating_sub(composer + footer);
-    let bottom = body_bottom_height(app, width, room);
-    let height = (bottom + composer + footer)
+    // Loader прогона — СВЕРХУ, над вводом (в области диалога, где идёт чат).
+    // Панель (палитра/подсказки/поиск/гейт) — СНИЗУ, под футером.
+    let loader = if app.running {
+        (loader_lines(app, width).len() as u16).min(room)
+    } else {
+        0
+    };
+    let panel = panel_height(app, width, room.saturating_sub(loader));
+    let height = (loader + composer + footer + panel)
         .min(full_h.saturating_sub(1).max(1))
         .max(composer + footer);
 
@@ -179,35 +186,34 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         Ok(terminal) => terminal,
         Err(_) => return (Vec::new(), 0, 0),
     };
-    // Порядок: поле ввода → футер → панель/loader ПОД футером (палитра/подсказки
-    // раскрываются вниз, под строкой подсказок, не сдвигая ввод).
+    // Порядок сверху вниз: loader → поле ввода → футер → панель.
     let lines = terminal
         .draw(|frame| {
             let area = frame.area();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
+                    Constraint::Length(loader),
                     Constraint::Length(composer),
                     Constraint::Length(footer),
-                    Constraint::Length(bottom),
+                    Constraint::Length(panel),
                 ])
                 .split(area);
-            draw_prompt_bar(frame, chunks[0], app);
-            draw_footer(frame, chunks[1], app);
-            if bottom > 0 {
-                if panel_active(app) {
-                    draw_active_panel(frame, chunks[2], app);
-                } else if app.running {
-                    frame.render_widget(Paragraph::new(loader_lines(app, width)), chunks[2]);
-                }
+            if loader > 0 {
+                frame.render_widget(Paragraph::new(loader_lines(app, width)), chunks[0]);
+            }
+            draw_prompt_bar(frame, chunks[1], app);
+            draw_footer(frame, chunks[2], app);
+            if panel > 0 {
+                draw_active_panel(frame, chunks[3], app);
             }
         })
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер теперь сверху блока (y=0), +1 на верхнюю линейку рамки.
+    // Курсор ввода: композер идёт после loader, +1 на верхнюю линейку рамки композера.
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (1 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (loader + 1 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
