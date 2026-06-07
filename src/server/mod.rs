@@ -655,6 +655,14 @@ fn spawn_log_drain(state: SharedState, rx: Receiver<WorkerEvent>, run_id: u64) {
                     state.finish_run();
                     break;
                 }
+                WorkerEvent::AuthMissing(provider) => {
+                    state.push_log(format!(
+                        "⏺ {} не залогинен.",
+                        provider_display(provider, Language::Ru)
+                    ));
+                    state.finish_run();
+                    break;
+                }
             }
         }
     });

@@ -65,10 +65,9 @@ impl App {
             return;
         }
 
-        if !self.ensure_auth_ready_for_provider(self.direct_provider) {
-            return;
-        }
-
+        // Проверку логина НЕ делаем здесь синхронно (она спавнит CLI-подпроцессы и
+        // морозит UI на пару секунд) — она ушла в воркер ниже. Сообщение и лоадер
+        // показываются мгновенно.
         let provider = self.direct_provider.as_str();
         let provider_name = provider_display(provider, self.lang);
         let effort = self.provider_effort(provider).to_string();
@@ -81,34 +80,21 @@ impl App {
         self.run_started_at = Some(Instant::now());
         self.run_label = provider_name.to_string();
         self.run_token_estimate = Some(token_estimate);
+        // Лоадер стартует чистым (только спиннер) — реальная активность модели
+        // подтянется по ходу через WorkerEvent::Activity.
         self.run_activity.clear();
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
         self.push_system(display);
-        self.push_run_activity(format!(
-            "{} {} CLI",
-            self.lang.choose("инструмент:", "tool:"),
-            provider_name
-        ));
-        self.push_run_activity(format!(
-            "{} {}",
-            self.lang.choose("cwd:", "cwd:"),
-            work_dir.display()
-        ));
-        self.push_run_activity(format!(
-            "{} {} · effort {}",
-            self.lang.choose("модель:", "model:"),
-            provider,
-            effort
-        ));
-        self.push_run_activity(
-            self.lang
-                .choose("ожидаю ответ модели...", "waiting for model output..."),
-        );
 
         let tx = self.tx.clone();
         thread::spawn(move || {
+            // Логин проверяем здесь, в воркере (не морозя UI). Не залогинен → событие.
+            if !provider_authenticated(provider) {
+                let _ = tx.send(WorkerEvent::AuthMissing(provider));
+                return;
+            }
             let command_result = run_chat_provider(
                 provider,
                 &effort,

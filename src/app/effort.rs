@@ -59,23 +59,6 @@ impl App {
         }
     }
 
-    pub(crate) fn active_effort_for_tokens(&self) -> &'static str {
-        match self.mode {
-            Mode::CodexOnly => effort_label(self.codex_effort_index),
-            Mode::ClaudeOnly => effort_label(self.claude_effort_index),
-            Mode::ClaudeCodex | Mode::CodexClaude if self.linked_effort_split => {
-                let claude = effort_label(self.claude_effort_index);
-                let codex = effort_label(self.codex_effort_index);
-                if effort_weight(claude) >= effort_weight(codex) {
-                    claude
-                } else {
-                    codex
-                }
-            }
-            Mode::ClaudeCodex | Mode::CodexClaude => effort_label(self.effort_index),
-        }
-    }
-
     pub(crate) fn effort_snapshot(&self) -> EffortSnapshot {
         EffortSnapshot {
             effort_index: self.effort_index,

@@ -14,20 +14,9 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
     } else {
         app.run_label.clone()
     };
-    let token_detail = app
-        .run_token_estimate
-        .map(|tokens| {
-            let live_tokens = live_token_estimate(tokens, elapsed, app.active_effort_for_tokens());
-            format!(" · ≈ {} tokens", format_token_count(live_tokens))
-        })
-        .unwrap_or_default();
-    let detail = format!(
-        "({} · {} · effort {}{})",
-        format_elapsed(elapsed),
-        label,
-        app.effort_summary(),
-        token_detail
-    );
+    // Без оценочного «≈ N tokens» — это фейковая инфа до реального расхода.
+    // Реальный расход (usage · $) показывается в футере по завершении прогона.
+    let detail = format!("({} · {})", format_elapsed(elapsed), label);
 
     let mut spans =
         theme_shimmer_text_spans(&format!("✳ {}… ", phrase), app.theme, current_effort_tick());
@@ -94,11 +83,6 @@ pub(crate) fn theme_shimmer_color(theme: Theme, index: usize, tick: u64) -> Colo
     palette[color_index]
 }
 
-pub(crate) fn live_token_estimate(base: usize, elapsed: Duration, effort: &str) -> usize {
-    let per_second = effort_weight(effort);
-    base.saturating_add(elapsed.as_secs() as usize * per_second)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,17 +97,6 @@ mod tests {
             theme_shimmer_color(Theme::Amber, 1, 0),
             Theme::Purple.accent()
         );
-    }
-}
-
-pub(crate) fn effort_weight(effort: &str) -> usize {
-    match effort {
-        "low" => 8,
-        "medium" => 16,
-        "high" => 28,
-        "xhigh" => 44,
-        "max" => 52,
-        _ => 20,
     }
 }
 

@@ -91,20 +91,15 @@ impl App {
         false
     }
 
-    pub(crate) fn ensure_auth_ready_for_provider(&mut self, provider: Provider) -> bool {
-        let onboarding = Onboarding::new(self.mode);
-        if provider_auth_ready(provider, &onboarding) {
-            return true;
-        }
-
-        let missing = missing_provider_auth_text(provider, &onboarding, self.lang);
+    /// Воркер сообщил, что провайдер не залогинен → показываем экран авторизации.
+    /// Без повторного зонда (воркер уже проверил), чтобы не морозить главный поток.
+    pub(crate) fn prompt_provider_login(&mut self, provider: Provider) {
+        let name = provider_display(provider.as_str(), self.lang);
         let message = format!(
             "{} {}. {}",
-            self.lang.choose(
-                "Для простого чата нужен логин:",
-                "Login required for direct chat:"
-            ),
-            missing,
+            self.lang
+                .choose("Для чата нужен логин:", "Login required for chat:"),
+            name,
             self.lang.choose(
                 "Нажми C для Codex login или L для Claude auth login.",
                 "Press C for Codex login or L for Claude auth login."
@@ -112,6 +107,5 @@ impl App {
         );
         self.open_auth_screen(message.clone(), true);
         self.show_footer_notice(message);
-        false
     }
 }

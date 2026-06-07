@@ -10,6 +10,8 @@ pub(crate) enum WorkerEvent {
     PlanReady(&'static str, String, i32, Option<RunUsage>),
     Cancelled,
     Failed(String),
+    /// Провайдер не залогинен — проверка ушла в воркер, чтобы не морозить UI.
+    AuthMissing(&'static str),
 }
 
 pub(crate) enum ChatRunResult {
@@ -164,6 +166,18 @@ impl App {
                     self.status = self.lang.choose("ошибка", "failed").to_string();
                     self.push_system(message);
                     self.process_pending_messages();
+                }
+                WorkerEvent::AuthMissing(provider) => {
+                    self.running = false;
+                    self.run_started_at = None;
+                    self.run_label.clear();
+                    self.run_token_estimate = None;
+                    self.run_activity.clear();
+                    self.cancel_tx = None;
+                    self.pending_messages.clear();
+                    if let Some(provider) = Provider::from_str(provider) {
+                        self.prompt_provider_login(provider);
+                    }
                 }
             }
         }
