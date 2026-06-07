@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::*;
 
+pub(crate) mod ask;
 pub(crate) mod chats;
 pub(crate) mod command_palette;
 pub(crate) mod effort;
@@ -15,6 +16,7 @@ pub(crate) mod settings;
 pub(crate) mod shortcuts;
 pub(crate) mod transcript;
 
+pub(crate) use ask::*;
 pub(crate) use chats::*;
 pub(crate) use command_palette::*;
 pub(crate) use effort::*;
@@ -38,7 +40,8 @@ pub(crate) const COMMAND_PALETTE_ROWS: u16 = 12;
 /// футер прячется: панель сама несёт контекст, дублировать подсказки незачем, да и
 /// строку у панели отъедать не нужно. Условия должны совпадать с `panel_height`.
 pub(crate) fn panel_active(app: &App) -> bool {
-    normalized_command_query(&app.input).is_some()
+    app.ask_active()
+        || normalized_command_query(&app.input).is_some()
         || app.overlay == Overlay::Shortcuts
         || app.overlay == Overlay::Search
         || app.plan_gate_active()
@@ -47,7 +50,9 @@ pub(crate) fn panel_active(app: &App) -> bool {
 /// Высота под-футерной панели (палитра/подсказки/поиск/гейт), обрезанная по месту.
 /// Loader сюда НЕ входит — он рисуется над вводом (в области диалога), не под футером.
 pub(crate) fn panel_height(app: &App, width: u16, cap: u16) -> u16 {
-    let height = if normalized_command_query(&app.input).is_some() {
+    let height = if let Some(state) = &app.ask {
+        return ask_panel_height(state, cap);
+    } else if normalized_command_query(&app.input).is_some() {
         COMMAND_PALETTE_ROWS
     } else if app.overlay == Overlay::Shortcuts {
         shortcuts_panel_height(app.lang, width)
@@ -65,7 +70,9 @@ pub(crate) fn draw_active_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if area.height == 0 {
         return;
     }
-    if normalized_command_query(&app.input).is_some() {
+    if app.ask_active() {
+        draw_ask_panel(frame, area, app);
+    } else if normalized_command_query(&app.input).is_some() {
         draw_command_screen(frame, area, app);
     } else if app.overlay == Overlay::Shortcuts {
         draw_shortcuts_panel(frame, area, app);

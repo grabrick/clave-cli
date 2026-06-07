@@ -230,10 +230,22 @@ fn run_external_inline(app: &mut App, command: ExternalCommand) -> AnyResult<()>
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
     // Любое нажатие во время «печати» ответа — мгновенно дорисовать его.
+    let was_revealing = app.reveal.is_some();
     app.finish_reveal_now();
+    // Если эта клавиша только что до-печатала прозу и открыла селектор — не даём ей
+    // же дёрнуть его (иначе Enter мог бы случайно подтвердить первый вариант).
+    if was_revealing && app.ask_active() {
+        return;
+    }
 
     if app.onboarding.is_some() {
         handle_onboarding_key(app, key);
+        return;
+    }
+
+    // Активный inline-селектор перехватывает ввод (навигация/выбор/свой ответ).
+    if app.ask_active() {
+        handle_ask_key(app, key);
         return;
     }
 
@@ -342,6 +354,23 @@ pub(crate) fn handle_shortcuts_key(app: &mut App, key: KeyEvent) {
         return;
     }
     app.overlay = Overlay::None;
+}
+
+/// Ввод при открытом inline-селекторе: навигация, отметки (multi), подтверждение,
+/// «Свой вариант»/Esc → свободный ответ.
+pub(crate) fn handle_ask_key(app: &mut App, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+        app.handle_ctrl_c();
+        return;
+    }
+    match key.code {
+        KeyCode::Up => app.ask_move(-1),
+        KeyCode::Down => app.ask_move(1),
+        KeyCode::Char(' ') => app.ask_toggle(),
+        KeyCode::Enter => app.ask_submit(),
+        KeyCode::Esc => app.ask_cancel(),
+        _ => {}
+    }
 }
 
 pub(crate) fn handle_onboarding_key(app: &mut App, key: KeyEvent) {
