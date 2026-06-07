@@ -376,6 +376,10 @@ pub(crate) fn run_chat_provider(
 
     let mut child = command
         .current_dir(work_dir)
+        // stdin = /dev/null: агент получает промт из аргументов и НЕ должен делить
+        // терминал UI (иначе он мог бы перехватывать ввод или сбрасывать raw-режим
+        // терминала на выходе → UI «зависает» и не реагирует на клавиши).
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
@@ -528,6 +532,10 @@ pub(crate) fn run_provider_once(
 
     let mut child = command
         .current_dir(work_dir)
+        // stdin = /dev/null: агент получает промт из аргументов и НЕ должен делить
+        // терминал UI (иначе он мог бы перехватывать ввод или сбрасывать raw-режим
+        // терминала на выходе → UI «зависает» и не реагирует на клавиши).
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
