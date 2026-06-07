@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::*;
 
 use crossterm::{
-    cursor::{Hide, MoveDown, MoveRight, MoveToColumn, MoveUp, Show},
+    cursor::{Hide, MoveDown, MoveRight, MoveTo, MoveToColumn, MoveUp, Show},
     queue,
     style::{
         Attribute as CtAttr, Color as CtColor, Print, ResetColor, SetAttribute, SetBackgroundColor,
@@ -55,6 +55,26 @@ impl LiveRenderer {
     /// лишь изменившиеся (цвет/текст), не трогая остальные → нет мерцания футера, а
     /// анимация появления палитры (меняется цвет) проигрывается.
     pub(crate) fn render(&mut self, app: &mut App, width: u16, full_h: u16) -> io::Result<()> {
+        // Полная очистка терминала по запросу (/clear, /new, /resume): стираем
+        // экран И нативный скроллбэк, иначе старая напечатанная история остаётся.
+        if app.pending_clear_screen {
+            app.pending_clear_screen = false;
+            {
+                let mut out = io::stdout().lock();
+                queue!(
+                    out,
+                    Clear(ClearType::All),
+                    Clear(ClearType::Purge),
+                    MoveTo(0, 0)
+                )?;
+                out.flush()?;
+            }
+            self.started = false;
+            self.prev_height = 0;
+            self.cursor_above = 0;
+            self.prev_lines.clear();
+        }
+
         let (lines, cur_row, cur_col) = build_dynamic(app, width, full_h);
         let has_new_history = app.scrollback_count < app.transcript.len();
         let structural = !self.started || has_new_history || lines.len() != self.prev_lines.len();
