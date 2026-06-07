@@ -21,8 +21,11 @@ impl App {
     /// Идёт ли сейчас анимация (loader / footer-notice / shimmer effort).
     pub(crate) fn is_animating(&self) -> bool {
         // footer_right_changed_at намеренно НЕ учитываем (ротация раз в 8с не должна
-        // будить простой). Reveal удалён — история append-only (insert_before).
-        self.running || self.footer_notice.is_some() || self.overlay == Overlay::Effort
+        // будить простой). Палитру учитываем — у неё анимация появления (fade).
+        self.running
+            || self.footer_notice.is_some()
+            || self.overlay == Overlay::Effort
+            || normalized_command_query(&self.input).is_some()
     }
 
     pub(crate) fn push_run_activity(&mut self, activity: impl Into<String>) {

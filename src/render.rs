@@ -26,8 +26,10 @@ pub(crate) struct LiveRenderer {
     prev_height: u16,
     /// На сколько строк выше нижней строки блока стоял курсор ввода.
     cursor_above: u16,
-    /// Подпись блока прошлого кадра — чтобы не перерисовывать в покое (без мерцания).
-    last_signature: String,
+    /// Строки блока прошлого кадра — для дифф-перерисовки (правим только изменившиеся).
+    prev_lines: Vec<Line<'static>>,
+    /// Позиция курсора ввода прошлого кадра (строка, столбец) внутри блока.
+    prev_cursor: (u16, u16),
 }
 
 impl LiveRenderer {
@@ -36,65 +38,92 @@ impl LiveRenderer {
             started: false,
             prev_height: 0,
             cursor_above: 0,
-            last_signature: String::new(),
+            prev_lines: Vec::new(),
+            prev_cursor: (0, 0),
         }
     }
 
     /// Заставляет следующий кадр перерисоваться полностью (после модалок/внешних команд).
     pub(crate) fn invalidate(&mut self) {
-        self.last_signature.clear();
+        self.prev_lines.clear();
     }
 
-    /// Кадр: вытесняет новую историю в скроллбэк и перерисовывает живой блок.
+    /// Кадр: вытесняет новую историю в скроллбэк и обновляет живой блок.
+    ///
+    /// Полная перерисовка блока только при структурных изменениях (новая история,
+    /// смена высоты, первый кадр). В остальных случаях — ДИФФ по строкам: правим
+    /// лишь изменившиеся (цвет/текст), не трогая остальные → нет мерцания футера, а
+    /// анимация появления палитры (меняется цвет) проигрывается.
     pub(crate) fn render(&mut self, app: &mut App, width: u16, full_h: u16) -> io::Result<()> {
         let (lines, cur_row, cur_col) = build_dynamic(app, width, full_h);
         let has_new_history = app.scrollback_count < app.transcript.len();
-        let signature = dynamic_signature(&lines, cur_row, cur_col);
-        if self.started && !has_new_history && signature == self.last_signature {
-            return Ok(()); // ничего не изменилось — не трогаем экран
+        let structural = !self.started || has_new_history || lines.len() != self.prev_lines.len();
+
+        if !structural && lines == self.prev_lines && (cur_row, cur_col) == self.prev_cursor {
+            return Ok(()); // ничего не изменилось
         }
 
+        let height = lines.len() as u16;
+        let last = height.saturating_sub(1);
         let mut out = io::stdout().lock();
         queue!(out, Hide)?;
 
-        // 1) Встать в начало прошлого блока и стереть его (вместе с тем, что ниже).
-        if self.started {
+        if structural {
+            // Полная перерисовка: стереть старый блок, вывести новую историю, блок.
+            if self.started {
+                if self.cursor_above > 0 {
+                    queue!(out, MoveDown(self.cursor_above))?;
+                }
+                queue!(out, MoveToColumn(0))?;
+                if self.prev_height > 1 {
+                    queue!(out, MoveUp(self.prev_height - 1))?;
+                }
+            } else {
+                queue!(out, MoveToColumn(0))?;
+            }
+            queue!(out, Clear(ClearType::FromCursorDown))?;
+
+            while app.scrollback_count < app.transcript.len() {
+                let raw = app.transcript[app.scrollback_count].clone();
+                let rows =
+                    history_line_render(&raw, app.lang, width, app.theme, &mut app.flush_state);
+                for row in &rows {
+                    queue_line(&mut out, row)?;
+                    queue!(out, Clear(ClearType::UntilNewLine), Print("\r\n"))?;
+                }
+                app.scrollback_count += 1;
+            }
+
+            for (index, line) in lines.iter().enumerate() {
+                queue_line(&mut out, line)?;
+                queue!(out, Clear(ClearType::UntilNewLine))?;
+                if index + 1 < lines.len() {
+                    queue!(out, Print("\r\n"))?;
+                }
+            }
+        } else {
+            // Дифф: встать на верх блока и перерисовать только изменившиеся строки.
             if self.cursor_above > 0 {
                 queue!(out, MoveDown(self.cursor_above))?;
             }
             queue!(out, MoveToColumn(0))?;
-            if self.prev_height > 1 {
-                queue!(out, MoveUp(self.prev_height - 1))?;
+            if last > 0 {
+                queue!(out, MoveUp(last))?;
             }
-        } else {
-            queue!(out, MoveToColumn(0))?;
-        }
-        queue!(out, Clear(ClearType::FromCursorDown))?;
-
-        // 2) Новая история — построчно в скроллбэк (печатается один раз).
-        while app.scrollback_count < app.transcript.len() {
-            let raw = app.transcript[app.scrollback_count].clone();
-            let rows = history_line_render(&raw, app.lang, width, app.theme, &mut app.flush_state);
-            for row in &rows {
-                queue_line(&mut out, row)?;
-                queue!(out, Clear(ClearType::UntilNewLine), Print("\r\n"))?;
-            }
-            app.scrollback_count += 1;
-        }
-
-        // 3) Живой блок.
-        let height = lines.len() as u16;
-        for (index, line) in lines.iter().enumerate() {
-            queue_line(&mut out, line)?;
-            queue!(out, Clear(ClearType::UntilNewLine))?;
-            if index + 1 < lines.len() {
-                queue!(out, Print("\r\n"))?;
+            for (index, line) in lines.iter().enumerate() {
+                queue!(out, MoveToColumn(0))?;
+                if self.prev_lines.get(index) != Some(line) {
+                    queue_line(&mut out, line)?;
+                    queue!(out, Clear(ClearType::UntilNewLine))?;
+                }
+                if index + 1 < lines.len() {
+                    queue!(out, MoveDown(1))?;
+                }
             }
         }
 
-        // 4) Поставить курсор в поле ввода.
+        // Поставить курсор в поле ввода (он сейчас на последней строке блока).
         queue!(out, MoveToColumn(0))?;
-        let last = height.saturating_sub(1);
         if last > cur_row {
             queue!(out, MoveUp(last - cur_row))?;
         }
@@ -106,7 +135,8 @@ impl LiveRenderer {
 
         self.prev_height = height;
         self.cursor_above = last.saturating_sub(cur_row);
-        self.last_signature = signature;
+        self.prev_lines = lines;
+        self.prev_cursor = (cur_row, cur_col);
         self.started = true;
         Ok(())
     }
@@ -126,7 +156,7 @@ impl LiveRenderer {
         self.started = false;
         self.prev_height = 0;
         self.cursor_above = 0;
-        self.last_signature.clear();
+        self.prev_lines.clear();
         Ok(())
     }
 }
@@ -215,18 +245,6 @@ fn buffer_to_lines(buf: &Buffer) -> Vec<Line<'static>> {
             Line::from(spans)
         })
         .collect()
-}
-
-/// Подпись блока для определения «ничего не изменилось» (текст + позиция курсора).
-fn dynamic_signature(lines: &[Line<'static>], cur_row: u16, cur_col: u16) -> String {
-    let mut signature = format!("{cur_row}:{cur_col}\n");
-    for line in lines {
-        for span in &line.spans {
-            signature.push_str(span.content.as_ref());
-        }
-        signature.push('\n');
-    }
-    signature
 }
 
 fn queue_line(out: &mut impl Write, line: &Line<'static>) -> io::Result<()> {
