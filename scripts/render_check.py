@@ -68,19 +68,16 @@ def main() -> int:
             for r in screen.display
         )
 
-    # Между нижней линейкой композера и футером должна быть пустая строка-отступ.
-    def gap_before_footer():
+    # Над блоком (верхней линейкой композера) должна быть пустая строка — «воздух»
+    # между историей и блоком. Под инпутом отступа нет: футер сразу за композером.
+    def gap_above_block():
         disp = [r.rstrip() for r in screen.display]
-        inp = next((i for i, r in enumerate(disp) if "›" in r), None)
-        foot = next(
-            (i for i, r in enumerate(disp) if "Shift+Tab" in r and ("команды" in r or "commands" in r)),
-            None,
-        )
-        return inp is not None and foot is not None and (foot - inp) >= 3 and disp[foot - 1] == ""
+        rule = next((i for i, r in enumerate(disp) if r.count("─") > 50), None)
+        return rule is not None and rule >= 1 and disp[rule - 1] == ""
 
     pump(1.2)
     footer_idle = footer_shown()
-    gap_idle = gap_before_footer()
+    gap_idle = gap_above_block()
     opened = []
     footer_hidden_on_palette = []
     idles = []
@@ -127,7 +124,7 @@ def main() -> int:
         "Esc закрывает подсказки": shortcuts_closed,
         "idle стабилен (нет накопления)": stable,
         "футер виден в простое": footer_idle,
-        "отступ перед футером (воздух)": gap_idle,
+        "воздух над блоком (под текстом)": gap_idle,
         "футер прячется под палитрой (5/5)": all(footer_hidden_on_palette),
         "футер прячется под подсказками": footer_hidden_on_shortcuts,
         "футер возвращается после Esc": footer_back,

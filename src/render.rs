@@ -161,10 +161,9 @@ impl LiveRenderer {
         Ok(())
     }
 
-    /// Перед внешней командой / выходом: СТИРАЕТ живой блок целиком, оставляя на
-    /// экране только историю диалога. На выходе из приложения под ней встаёт
-    /// чистый shell-промт (без остатков поля ввода/футера); перед внешней командой
-    /// её вывод печатается на месте блока, а блок потом перерисуется (invalidate).
+    /// Перед внешней командой: СТИРАЕТ живой блок целиком, оставляя на экране
+    /// историю диалога. Вывод команды печатается на месте блока, а блок потом
+    /// перерисуется (invalidate). Для выхода из приложения см. `clear_for_exit`.
     pub(crate) fn leave_below(&mut self) -> io::Result<()> {
         if !self.started {
             return Ok(());
@@ -186,6 +185,22 @@ impl LiveRenderer {
         self.prev_lines.clear();
         Ok(())
     }
+
+    /// При выходе из приложения: чистим ВЕСЬ видимый экран и уводим курсор в начало,
+    /// чтобы оболочка получила пустой терминал, а не остатки беседы (в inline-режиме
+    /// история живёт в нативном скроллбэке, и `leave_below` стёр бы только блок).
+    /// Скроллбэк НЕ пуржим: это снесло бы и то, что было в терминале до запуска clave.
+    /// Сама беседа не теряется — она сохранена в файле чата (вернуть через /chats).
+    pub(crate) fn clear_for_exit(&mut self) -> io::Result<()> {
+        let mut out = io::stdout().lock();
+        queue!(out, MoveTo(0, 0), Clear(ClearType::All), Show)?;
+        out.flush()?;
+        self.started = false;
+        self.prev_height = 0;
+        self.cursor_above = 0;
+        self.prev_lines.clear();
+        Ok(())
+    }
 }
 
 /// Рендерит живой блок в оффскрин-буфер (переиспользуя обычные виджеты ratatui,
@@ -196,11 +211,11 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     // Футер прячется, когда открыта панель (палитра/подсказки/поиск/гейт): она сама
     // под композером, дублировать подсказки и отъедать строку незачем.
     let footer = if panel_active(app) { 0 } else { 1 };
-    // «Воздух» вокруг блока: пустая строка между историей и блоком (работает и под
-    // лоадером — он не липнет к тексту) и пустая строка перед футером.
+    // «Воздух» только сверху блока: пустая строка между историей и блоком (работает и
+    // под лоадером — он не липнет к тексту). Под инпутом отступ не нужен — футер идёт
+    // сразу за нижней линейкой композера.
     let gap_top = 1u16;
-    let gap_footer = footer; // 1, когда футер показан; 0, когда спрятан
-    let reserved = gap_top + composer + gap_footer + footer;
+    let reserved = gap_top + composer + footer;
     let room = full_h
         .saturating_sub(1) // оставить хотя бы строку под историю/скроллбэк
         .saturating_sub(reserved);
@@ -222,7 +237,7 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     // Если reveal длиннее окна — показываем хвост (низ), как стрим в терминале.
     let top_tail: Vec<Line<'static>> = top.split_off(top.len() - top_h as usize);
     let panel = panel_height(app, width, room.saturating_sub(top_h));
-    let height = (gap_top + top_h + composer + gap_footer + footer + panel)
+    let height = (gap_top + top_h + composer + footer + panel)
         .min(full_h.saturating_sub(1).max(1))
         .max(composer + footer);
 
@@ -230,7 +245,7 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         Ok(terminal) => terminal,
         Err(_) => return (Vec::new(), 0, 0),
     };
-    // Порядок сверху вниз: воздух → reveal|loader → поле ввода → воздух → футер → панель.
+    // Порядок сверху вниз: воздух → reveal|loader → поле ввода → футер → панель.
     let lines = terminal
         .draw(|frame| {
             let area = frame.area();
@@ -240,7 +255,6 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
                     Constraint::Length(gap_top),
                     Constraint::Length(top_h),
                     Constraint::Length(composer),
-                    Constraint::Length(gap_footer),
                     Constraint::Length(footer),
                     Constraint::Length(panel),
                 ])
@@ -250,10 +264,10 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
             }
             draw_prompt_bar(frame, chunks[2], app);
             if footer > 0 {
-                draw_footer(frame, chunks[4], app);
+                draw_footer(frame, chunks[3], app);
             }
             if panel > 0 {
-                draw_active_panel(frame, chunks[5], app);
+                draw_active_panel(frame, chunks[4], app);
             }
         })
         .map(|completed| buffer_to_lines(completed.buffer))
