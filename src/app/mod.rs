@@ -53,6 +53,10 @@ pub(crate) struct App {
     /// Запрос на полную очистку терминала (экран + нативный скроллбэк): ставится
     /// при сбросе ленты (/clear, /new, /resume), исполняется рендером.
     pub(crate) pending_clear_screen: bool,
+    /// Строки ответа, накопленные до завершения (потом «печатаются» через reveal).
+    pub(crate) reveal_buffer: Vec<String>,
+    /// Активная плавная отрисовка ответа («печатная машинка») или None.
+    pub(crate) reveal: Option<Reveal>,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -145,6 +149,8 @@ impl App {
             scrollback_count: 0,
             flush_state: TranscriptRenderState::default(),
             pending_clear_screen: false,
+            reveal_buffer: Vec::new(),
+            reveal: None,
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,
