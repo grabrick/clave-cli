@@ -112,6 +112,7 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
 pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<()> {
     loop {
         app.drain_worker_events();
+        app.advance_reveal();
         app.expire_footer_notice();
         app.refresh_command_palette_state();
         app.refresh_footer_right_state();
@@ -215,6 +216,9 @@ fn run_external_inline(app: &mut App, command: ExternalCommand) -> AnyResult<()>
 }
 
 pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
+    // Любое нажатие во время «печати» ответа — мгновенно дорисовать его.
+    app.finish_reveal_now();
+
     if app.onboarding.is_some() {
         handle_onboarding_key(app, key);
         return;

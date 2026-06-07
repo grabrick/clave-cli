@@ -197,15 +197,26 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     let room = full_h
         .saturating_sub(1) // оставить хотя бы строку под историю/скроллбэк
         .saturating_sub(composer + footer);
-    // Loader прогона — СВЕРХУ, над вводом (в области диалога, где идёт чат).
-    // Панель (палитра/подсказки/поиск/гейт) — СНИЗУ, под футером.
-    let loader = if app.running {
-        (loader_lines(app, width).len() as u16).min(room)
+    // Верхний слот над вводом (область диалога): «печать» ответа (reveal) во время
+    // плавной отрисовки, иначе loader прогона. Панель (палитра/подсказки/поиск/гейт)
+    // — снизу, под футером.
+    let mut top: Vec<Line<'static>> = if let Some(reveal) = &app.reveal {
+        let shown = reveal.shown_text();
+        let mut state = TranscriptRenderState::default();
+        shown
+            .split('\n')
+            .flat_map(|line| history_line_render(line, app.lang, width, app.theme, &mut state))
+            .collect()
+    } else if app.running {
+        loader_lines(app, width)
     } else {
-        0
+        Vec::new()
     };
-    let panel = panel_height(app, width, room.saturating_sub(loader));
-    let height = (loader + composer + footer + panel)
+    let top_h = (top.len() as u16).min(room);
+    // Если reveal длиннее окна — показываем хвост (низ), как стрим в терминале.
+    let top_tail: Vec<Line<'static>> = top.split_off(top.len() - top_h as usize);
+    let panel = panel_height(app, width, room.saturating_sub(top_h));
+    let height = (top_h + composer + footer + panel)
         .min(full_h.saturating_sub(1).max(1))
         .max(composer + footer);
 
@@ -213,21 +224,21 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         Ok(terminal) => terminal,
         Err(_) => return (Vec::new(), 0, 0),
     };
-    // Порядок сверху вниз: loader → поле ввода → футер → панель.
+    // Порядок сверху вниз: reveal|loader → поле ввода → футер → панель.
     let lines = terminal
         .draw(|frame| {
             let area = frame.area();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(loader),
+                    Constraint::Length(top_h),
                     Constraint::Length(composer),
                     Constraint::Length(footer),
                     Constraint::Length(panel),
                 ])
                 .split(area);
-            if loader > 0 {
-                frame.render_widget(Paragraph::new(loader_lines(app, width)), chunks[0]);
+            if top_h > 0 {
+                frame.render_widget(Paragraph::new(top_tail), chunks[0]);
             }
             draw_prompt_bar(frame, chunks[1], app);
             draw_footer(frame, chunks[2], app);
@@ -238,9 +249,9 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер идёт после loader, +1 на верхнюю линейку рамки композера.
+    // Курсор ввода: композер идёт после верхнего слота, +1 на верхнюю линейку рамки.
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (loader + 1 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (top_h + 1 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
