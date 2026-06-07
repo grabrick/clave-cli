@@ -34,6 +34,16 @@ pub(crate) use transcript::*;
 /// Сколько строк показывает палитра команд (самая высокая панель).
 pub(crate) const COMMAND_PALETTE_ROWS: u16 = 12;
 
+/// Открыта ли под-композерная панель (палитра/подсказки/поиск/гейт). Когда открыта,
+/// футер прячется: панель сама несёт контекст, дублировать подсказки незачем, да и
+/// строку у панели отъедать не нужно. Условия должны совпадать с `panel_height`.
+pub(crate) fn panel_active(app: &App) -> bool {
+    normalized_command_query(&app.input).is_some()
+        || app.overlay == Overlay::Shortcuts
+        || app.overlay == Overlay::Search
+        || app.plan_gate_active()
+}
+
 /// Высота под-футерной панели (палитра/подсказки/поиск/гейт), обрезанная по месту.
 /// Loader сюда НЕ входит — он рисуется над вводом (в области диалога), не под футером.
 pub(crate) fn panel_height(app: &App, width: u16, cap: u16) -> u16 {

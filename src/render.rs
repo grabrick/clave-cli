@@ -193,13 +193,19 @@ impl LiveRenderer {
 fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16, u16) {
     let width = width.max(1);
     let composer = composer_height(app, width);
-    let footer = 1u16;
+    // Футер прячется, когда открыта панель (палитра/подсказки/поиск/гейт): она сама
+    // под композером, дублировать подсказки и отъедать строку незачем.
+    let footer = if panel_active(app) { 0 } else { 1 };
+    // «Воздух» вокруг блока: пустая строка между историей и блоком (работает и под
+    // лоадером — он не липнет к тексту) и пустая строка перед футером.
+    let gap_top = 1u16;
+    let gap_footer = footer; // 1, когда футер показан; 0, когда спрятан
+    let reserved = gap_top + composer + gap_footer + footer;
     let room = full_h
         .saturating_sub(1) // оставить хотя бы строку под историю/скроллбэк
-        .saturating_sub(composer + footer);
+        .saturating_sub(reserved);
     // Верхний слот над вводом (область диалога): «печать» ответа (reveal) во время
-    // плавной отрисовки, иначе loader прогона. Панель (палитра/подсказки/поиск/гейт)
-    // — снизу, под футером.
+    // плавной отрисовки, иначе loader прогона.
     let mut top: Vec<Line<'static>> = if let Some(reveal) = &app.reveal {
         let shown = reveal.shown_text();
         let mut state = TranscriptRenderState::default();
@@ -216,7 +222,7 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     // Если reveal длиннее окна — показываем хвост (низ), как стрим в терминале.
     let top_tail: Vec<Line<'static>> = top.split_off(top.len() - top_h as usize);
     let panel = panel_height(app, width, room.saturating_sub(top_h));
-    let height = (top_h + composer + footer + panel)
+    let height = (gap_top + top_h + composer + gap_footer + footer + panel)
         .min(full_h.saturating_sub(1).max(1))
         .max(composer + footer);
 
@@ -224,34 +230,38 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         Ok(terminal) => terminal,
         Err(_) => return (Vec::new(), 0, 0),
     };
-    // Порядок сверху вниз: reveal|loader → поле ввода → футер → панель.
+    // Порядок сверху вниз: воздух → reveal|loader → поле ввода → воздух → футер → панель.
     let lines = terminal
         .draw(|frame| {
             let area = frame.area();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
+                    Constraint::Length(gap_top),
                     Constraint::Length(top_h),
                     Constraint::Length(composer),
+                    Constraint::Length(gap_footer),
                     Constraint::Length(footer),
                     Constraint::Length(panel),
                 ])
                 .split(area);
             if top_h > 0 {
-                frame.render_widget(Paragraph::new(top_tail), chunks[0]);
+                frame.render_widget(Paragraph::new(top_tail), chunks[1]);
             }
-            draw_prompt_bar(frame, chunks[1], app);
-            draw_footer(frame, chunks[2], app);
+            draw_prompt_bar(frame, chunks[2], app);
+            if footer > 0 {
+                draw_footer(frame, chunks[4], app);
+            }
             if panel > 0 {
-                draw_active_panel(frame, chunks[3], app);
+                draw_active_panel(frame, chunks[5], app);
             }
         })
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер идёт после верхнего слота, +1 на верхнюю линейку рамки.
+    // Курсор ввода: композер идёт после воздуха и верхнего слота, +1 на линейку рамки.
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (top_h + 1 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (gap_top + top_h + 1 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
