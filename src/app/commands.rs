@@ -320,6 +320,7 @@ impl App {
                     self.clear_all_chats();
                 } else {
                     self.transcript.clear();
+                    self.reset_scrollback();
                     self.push_command_result(self.lang.choose("Лента очищена.", "Transcript cleared."));
                 }
             }

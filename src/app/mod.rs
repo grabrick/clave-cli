@@ -43,8 +43,13 @@ pub(crate) struct App {
     pub(crate) input: String,
     pub(crate) cursor: usize,
     pub(crate) transcript: Vec<String>,
-    pub(crate) pending_output: VecDeque<String>,
-    pub(crate) render_state: TranscriptRenderState,
+    /// Сколько первых строк `transcript` уже вытеснено в нативный скроллбэк
+    /// терминала (через insert_before). Хвост `transcript[scrollback_count..]`
+    /// живёт в нижнем viewport и перерисовывается на месте.
+    pub(crate) scrollback_count: usize,
+    /// Состояние рендера (code-block) на границе вытеснения — чтобы хвост
+    /// рисовался с корректной подсветкой, не пересчитывая всю историю.
+    pub(crate) flush_state: TranscriptRenderState,
     pub(crate) status: String,
     pub(crate) last_run: Option<String>,
     pub(crate) running: bool,
@@ -134,8 +139,8 @@ impl App {
             input: String::new(),
             cursor: 0,
             transcript,
-            pending_output: VecDeque::new(),
-            render_state: TranscriptRenderState::default(),
+            scrollback_count: 0,
+            flush_state: TranscriptRenderState::default(),
             status: config.lang.choose("готов", "ready").to_string(),
             last_run,
             running: false,

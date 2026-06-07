@@ -12,7 +12,7 @@ pub(crate) fn history_line_render(
     transcript_entry_lines_with_state(line, lang, width, theme, state)
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub(crate) struct TranscriptRenderState {
     in_code_block: bool,
 }

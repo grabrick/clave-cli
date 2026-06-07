@@ -27,6 +27,7 @@ impl App {
         self.chat_id = new_chat_id();
         self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
         self.transcript.clear();
+        self.reset_scrollback();
         self.last_run = None;
         self.pending_plan = None;
         self.plan_flow = PlanFlow::None;
@@ -70,10 +71,8 @@ impl App {
                 self.chat_id = chat_id;
                 self.chat_path = path;
                 self.transcript = lines;
+                self.reset_scrollback();
                 self.last_run = find_last_run(&self.transcript);
-                // Inline append-only: восстановленный чат надо перепечатать в буфер,
-                // иначе flush_history его не покажет (печатает только pending_output).
-                self.pending_output.extend(self.transcript.iter().cloned());
                 self.pending_plan = None;
                 self.plan_flow = PlanFlow::None;
                 self.status = self.lang.choose("чат открыт", "chat resumed").to_string();
@@ -186,23 +185,31 @@ impl App {
         let line = line.into();
         if let Err(err) = append_chat_line(&self.chat_path, &line) {
             self.status = self.lang.choose("ошибка чата", "chat error").to_string();
-            let err_line = format!(
+            self.transcript.push(format!(
                 "{} {}",
                 self.lang
                     .choose("Не удалось сохранить чат:", "Failed to save chat:"),
                 err
-            );
-            self.transcript.push(err_line.clone());
-            self.pending_output.push_back(err_line);
+            ));
         }
 
-        self.transcript.push(line.clone());
+        // Строка добавляется только в transcript; нижний viewport покажет её в
+        // хвосте, а runtime::flush_overflow вытеснит старое в скроллбэк по мере
+        // надобности (append-only история).
+        self.transcript.push(line);
         if self.transcript.len() > MAX_TRANSCRIPT_LINES {
             let remove_count = self.transcript.len() - MAX_TRANSCRIPT_LINES;
             self.transcript.drain(0..remove_count);
+            // Срезанные строки были из уже вытесненной «головы» — сдвигаем границу.
+            self.scrollback_count = self.scrollback_count.saturating_sub(remove_count);
         }
-        // Append-only история: строка уходит в обычный буфер терминала через
-        // insert_before (см. runtime::flush_history); внутри истории не мутируется.
-        self.pending_output.push_back(line);
+    }
+
+    /// Сбрасывает границу вытеснения: вызывать при ПОЛНОЙ замене transcript
+    /// (новый чат, /resume, /clear) — содержимое сменилось, прошлая «голова»
+    /// больше не относится к текущей ленте.
+    pub(crate) fn reset_scrollback(&mut self) {
+        self.scrollback_count = 0;
+        self.flush_state = TranscriptRenderState::default();
     }
 }

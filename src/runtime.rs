@@ -40,15 +40,17 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     let _guard = TerminalGuard::new()?;
     let mut app = App::new();
-    let welcome = welcome_lines(&app);
-    let initial = startup_history(&app.transcript, welcome);
-    app.pending_output.extend(initial);
-    let width = terminal_width();
+    if app.transcript.is_empty() {
+        // Пустой старт → приветственный блок прямо в ленту (в файл не пишется,
+        // т.к. не идёт через push_system; покажется в нижнем регионе).
+        app.transcript = welcome_lines(&app);
+    }
+    let (_, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::with_options(
         backend,
         TerminalOptions {
-            viewport: Viewport::Inline(desired_viewport_height(&app, width)),
+            viewport: Viewport::Inline(live_viewport_height(full_h)),
         },
     )?;
     run_app(&mut terminal, &mut app)
@@ -72,23 +74,8 @@ impl Drop for TerminalGuard {
     }
 }
 
-fn terminal_width() -> u16 {
-    crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80)
-}
-
-/// Что показать в буфере при старте: восстановленный чат — построчно как есть,
-/// иначе приветственный блок. `flush_history` печатает только pending_output,
-/// поэтому стартовый transcript обязан попасть сюда — иначе экран пустой.
-fn startup_history(transcript: &[String], welcome: Vec<String>) -> Vec<String> {
-    if transcript.is_empty() {
-        welcome
-    } else {
-        transcript.to_vec()
-    }
-}
-
-/// Приветственный блок для пустого старта — печатается в историю (инвариант 4:
-/// welcome живёт в истории, а не в полноэкранной карточке).
+/// Приветственный блок для пустого старта — кладётся в ленту и живёт в нижнем
+/// регионе, пока не вытеснится новой историей.
 fn welcome_lines(app: &App) -> Vec<String> {
     let lang = app.lang;
     vec![
@@ -129,56 +116,82 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
     }
 }
 
-/// Печатает накопленные строки истории выше живого viewport через `insert_before`
-/// (append-only, инвариант 1), со стилизацией. Скролл/выделение — нативные.
-fn flush_history(
+/// Сколько передних строк-групп вытеснить в скроллбэк, чтобы остаток помещался в
+/// `cap` строк (последнюю группу не трогаем — в ленте всегда что-то остаётся).
+fn overflow_flush_count(group_lens: &[usize], cap: usize) -> usize {
+    let mut total: usize = group_lens.iter().sum();
+    let mut flushed = 0;
+    while total > cap && flushed + 1 < group_lens.len() {
+        total -= group_lens[flushed];
+        flushed += 1;
+    }
+    flushed
+}
+
+/// Вытесняет в НАТИВНЫЙ скроллбэк (через `insert_before`) строки, не влезающие в
+/// живой хвост (`cap` строк), и возвращает уже отрендеренный хвост для отрисовки.
+/// Вытеснение происходит ТОЛЬКО от новой истории (cap не зависит от панелей),
+/// поэтому открытие палитры/подсказок ничего не двигает — панель рисуется поверх.
+fn flush_overflow(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     width: u16,
-) -> io::Result<()> {
-    while let Some(raw) = app.pending_output.pop_front() {
-        let lines = history_line_render(&raw, app.lang, width, app.theme, &mut app.render_state);
-        let height = lines.len().max(1) as u16;
-        terminal.insert_before(height, |buf| {
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .render(buf.area, buf);
-        })?;
+    cap: u16,
+) -> io::Result<Vec<Line<'static>>> {
+    let cap = cap.max(1) as usize;
+    // Рендерим хвост один раз; state — клон границы (не мутируем её зря).
+    let mut state = app.flush_state;
+    let groups: Vec<Vec<Line<'static>>> = app.transcript[app.scrollback_count..]
+        .iter()
+        .map(|line| history_line_render(line, app.lang, width, app.theme, &mut state))
+        .collect();
+
+    let lens: Vec<usize> = groups.iter().map(Vec::len).collect();
+    let flushed = overflow_flush_count(&lens, cap);
+
+    // Собираем вытесняемое заранее (строки + исходный текст), чтобы не держать
+    // borrow на transcript во время insert_before и сдвига flush_state.
+    let base = app.scrollback_count;
+    let to_flush: Vec<(Vec<Line<'static>>, String)> = groups
+        .iter()
+        .take(flushed)
+        .enumerate()
+        .map(|(offset, rows)| (rows.clone(), app.transcript[base + offset].clone()))
+        .collect();
+    for (rows, source) in to_flush {
+        if !rows.is_empty() {
+            let height = rows.len() as u16;
+            terminal.insert_before(height, move |buf| {
+                Paragraph::new(rows)
+                    .wrap(Wrap { trim: false })
+                    .render(buf.area, buf);
+            })?;
+        }
+        // Двигаем реальную границу состояния через вытесненную строку.
+        let _ = history_line_render(&source, app.lang, width, app.theme, &mut app.flush_state);
     }
-    Ok(())
+    app.scrollback_count += flushed;
+
+    let mut tail: Vec<Line<'static>> = groups[flushed..].iter().flatten().cloned().collect();
+    if tail.len() > cap {
+        tail.drain(0..tail.len() - cap);
+    }
+    Ok(tail)
 }
 
-/// Меняет высоту живого inline-viewport. ratatui 0.30 НЕ умеет ресайзить inline
-/// через `resize()` — высота зашита в `Viewport::Inline` при создании, поэтому
-/// пересоздаём терминал. Старый viewport стираем (от его верха вниз), чтобы он не
-/// «вмёрз» в историю. Якорь нового — у нижнего края: при росте курсор уводим в
-/// самый низ (история проскроллится вверх, освобождая место), при сжатии ставим
-/// курсор на верх нового viewport (без скролла — сверху останется временный
-/// зазор, который затрётся следующей строкой истории или результатом прогона).
-fn rebuild_inline_viewport(
+/// Пересоздаёт inline-viewport заданной высоты. Высота живого региона фиксирована
+/// за сессию, поэтому это вызывается РЕДКО — только при ресайзе окна и при выходе
+/// из полноэкранной модалки (не на каждый кадр), так что разовый скролл при
+/// пересоздании не накапливается.
+fn create_inline_viewport(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    old_h: u16,
-    new_h: u16,
+    height: u16,
 ) -> io::Result<()> {
-    let (_, full_h) = crossterm::terminal::size()?;
-    let new_h = new_h.min(full_h).max(1);
-    let old_top = full_h.saturating_sub(old_h.min(full_h));
-    let anchor_y = if new_h >= old_h {
-        full_h.saturating_sub(1)
-    } else {
-        full_h.saturating_sub(new_h)
-    };
-    execute!(
-        io::stdout(),
-        crossterm::cursor::MoveTo(0, old_top),
-        crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
-        crossterm::cursor::MoveTo(0, anchor_y),
-    )?;
     let backend = CrosstermBackend::new(io::stdout());
     *terminal = Terminal::with_options(
         backend,
         TerminalOptions {
-            viewport: Viewport::Inline(new_h),
+            viewport: Viewport::Inline(height.max(1)),
         },
     )?;
     Ok(())
@@ -188,23 +201,30 @@ pub(crate) fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> AnyResult<()> {
-    let mut viewport_h = desired_viewport_height(app, terminal_width());
+    let (mut last_w, mut last_h) = crossterm::terminal::size().unwrap_or((80, 24));
     loop {
         app.drain_worker_events();
         app.expire_footer_notice();
         app.refresh_command_palette_state();
         app.refresh_footer_right_state();
 
-        let width = terminal_width();
-        flush_history(terminal, app, width)?;
-
-        let want = desired_viewport_height(app, width);
-        if want != viewport_h {
-            rebuild_inline_viewport(terminal, viewport_h, want)?;
-            viewport_h = want;
+        let (width, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
+        if width != last_w || full_h != last_h {
+            // Окно терминала изменилось — пересоздаём живой регион новой высоты.
+            create_inline_viewport(terminal, live_viewport_height(full_h))?;
+            last_w = width;
+            last_h = full_h;
         }
 
-        terminal.draw(|frame| draw_viewport(frame, app))?;
+        // Ёмкость хвоста = живой регион минус композер и футер. От панелей НЕ
+        // зависит (панель рисуется поверх хвоста), поэтому их открытие не вытесняет.
+        let live_h = live_viewport_height(full_h);
+        let body_cap = live_h
+            .saturating_sub(composer_height(app, width))
+            .saturating_sub(1);
+        let tail = flush_overflow(terminal, app, width, body_cap)?;
+
+        terminal.draw(|frame| draw_viewport(frame, app, &tail))?;
 
         if app.should_quit {
             return Ok(());
@@ -212,7 +232,6 @@ pub(crate) fn run_app(
 
         if app.onboarding.is_some() || app.overlay.is_modal() {
             run_modal(terminal, app)?;
-            viewport_h = desired_viewport_height(app, terminal_width());
             continue;
         }
 
@@ -268,15 +287,10 @@ fn run_modal(
         }
     }
 
-    // Возврат на основной экран и пересоздание inline-viewport нужной высоты.
+    // Возврат на основной экран и пересоздание живого региона фиксированной высоты.
     execute!(io::stdout(), LeaveAlternateScreen)?;
-    let backend = CrosstermBackend::new(io::stdout());
-    *terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(desired_viewport_height(app, terminal_width())),
-        },
-    )?;
+    let (_, full_h) = crossterm::terminal::size().unwrap_or((80, 24));
+    create_inline_viewport(terminal, live_viewport_height(full_h))?;
     Ok(())
 }
 
@@ -705,20 +719,21 @@ mod tests {
     }
 
     #[test]
-    fn startup_history_replays_chat_else_welcome() {
-        let welcome = vec!["✦ clave готов".to_string(), "подсказки".to_string()];
-        let chat = vec!["◆ привет".to_string(), "⏺ ответ".to_string()];
-        // Восстановленный чат печатается как есть — иначе при старте пустой экран,
-        // т.к. flush_history печатает только pending_output (регрессия inline).
-        assert_eq!(startup_history(&chat, welcome.clone()), chat);
-        // Пустой старт — показываем приветственный блок.
-        assert_eq!(startup_history(&[], welcome.clone()), welcome);
+    fn overflow_flush_count_keeps_tail_within_cap() {
+        // Всё помещается → ничего не вытесняем.
+        assert_eq!(overflow_flush_count(&[1, 1, 1], 3), 0);
+        // 5 строк, cap 3 → вытеснить две передние, оставить три.
+        assert_eq!(overflow_flush_count(&[1, 1, 1, 1, 1], 3), 2);
+        // Последнюю группу не трогаем — в ленте всегда что-то остаётся.
+        assert_eq!(overflow_flush_count(&[10], 3), 0);
+        // Многострочные группы считаются по строкам.
+        assert_eq!(overflow_flush_count(&[2, 2, 2], 3), 2);
     }
 
     #[test]
-    fn startup_seeds_restored_chat_from_disk() {
-        // Полный путь регрессии: реальный файл чата на диске -> restore_or_create_chat
-        // -> startup_history -> буфер печати. Песочница в temp-каталоге.
+    fn restored_chat_reaches_transcript_for_the_live_region() {
+        // Реальный файл чата на диске -> restore_or_create_chat -> transcript,
+        // откуда живой регион (flush_overflow/draw_viewport) его и показывает.
         let dir = env::temp_dir().join(format!("clave-startup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir");
@@ -735,23 +750,20 @@ mod tests {
         )
         .expect("save chat");
 
-        // Возобновление: чат поднят с диска и целиком попал в стартовый буфер.
         let (rid, _, transcript) = restore_or_create_chat(&dir, Some(id), Language::Ru);
         assert_eq!(rid, id);
-        let welcome = vec!["✦ clave готов".to_string()];
         assert_eq!(
-            startup_history(&transcript, welcome.clone()),
+            transcript,
             vec![
                 "◆ MARKER_OLD_CHAT".to_string(),
                 "⏺ STALE_ANSWER".to_string()
             ],
-            "восстановленный чат обязан дойти до буфера печати"
+            "восстановленный чат обязан попасть в transcript"
         );
 
-        // Пустой старт (last_chat=None): буфер = приветственный блок, не пусто.
+        // Пустой старт → transcript пуст (run_tui подставит welcome_lines).
         let (_, _, fresh) = restore_or_create_chat(&dir, None, Language::Ru);
         assert!(fresh.is_empty());
-        assert_eq!(startup_history(&fresh, welcome.clone()), welcome);
 
         let _ = fs::remove_dir_all(&dir);
     }
