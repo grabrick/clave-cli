@@ -6,6 +6,8 @@ pub(crate) struct AskState {
     pub(crate) prompt: AskPrompt,
     pub(crate) cursor: usize,
     pub(crate) checked: Vec<bool>,
+    /// Текст «своего ответа» (инлайн-поле на последней строке списка).
+    pub(crate) custom: String,
 }
 
 impl AskState {
@@ -15,6 +17,7 @@ impl AskState {
             prompt,
             cursor: 0,
             checked: vec![false; n],
+            custom: String::new(),
         }
     }
 
@@ -64,14 +67,40 @@ impl App {
         }
     }
 
-    /// Enter: «Свой вариант» → закрыть (свободный ответ); иначе отправить выбор модели.
+    /// На строке «Свой ответ» стоит курсор? (туда идёт ввод текста.)
+    pub(crate) fn ask_on_custom_row(&self) -> bool {
+        self.ask.as_ref().is_some_and(AskState::on_custom_row)
+    }
+
+    /// Печать символа в поле «своего ответа» (только когда курсор на этой строке).
+    pub(crate) fn ask_custom_push(&mut self, ch: char) {
+        if let Some(state) = &mut self.ask {
+            if state.on_custom_row() && !ch.is_control() {
+                state.custom.push(ch);
+            }
+        }
+    }
+
+    pub(crate) fn ask_custom_backspace(&mut self) {
+        if let Some(state) = &mut self.ask {
+            if state.on_custom_row() {
+                state.custom.pop();
+            }
+        }
+    }
+
+    /// Enter: на строке «Свой ответ» — отправить введённый текст; иначе — выбор модели.
     pub(crate) fn ask_submit(&mut self) {
         let Some(state) = &self.ask else {
             return;
         };
         if state.on_custom_row() {
+            let text = state.custom.trim().to_string();
+            if text.is_empty() {
+                return; // поле пустое — ждём ввода (Esc — выйти из селектора)
+            }
             self.ask = None;
-            self.status = self.lang.choose("свой ответ", "custom").to_string();
+            self.start_chat(text);
             return;
         }
         let labels: Vec<String> = if state.prompt.multi {

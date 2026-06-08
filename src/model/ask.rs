@@ -56,13 +56,28 @@ fn find_ask_block(text: &str) -> Option<AskBlock> {
     })
 }
 
+/// Истинно ли значение `multi` (терпимо к bool / "true" / 1 / "yes" / "да").
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::String(s) => matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes" | "да"
+        ),
+        Value::Number(n) => n.as_i64() == Some(1) || n.as_f64() == Some(1.0),
+        _ => false,
+    }
+}
+
 fn parse_ask_json(json: &str) -> Option<AskPrompt> {
     let value: Value = serde_json::from_str(json).ok()?;
     let question = value.get("question")?.as_str()?.trim().to_string();
     if question.is_empty() {
         return None;
     }
-    let multi = value.get("multi").and_then(Value::as_bool).unwrap_or(false);
+    // Нестрого: модели часто отдают multi не булевым (строкой "true", числом 1) —
+    // иначе строгий as_bool() молча даёт false и множественный выбор «ломается».
+    let multi = value.get("multi").is_some_and(is_truthy);
     let options_val = value.get("options")?.as_array()?;
 
     let mut options = Vec::new();
@@ -129,6 +144,29 @@ mod tests {
         let prompt = prompt.expect("Some");
         assert!(prompt.multi);
         assert_eq!(prompt.options.len(), 3);
+    }
+
+    #[test]
+    fn multi_is_parsed_leniently() {
+        // Модель отдала multi строкой "true" — всё равно множественный выбор.
+        for raw in [r#""true""#, "1", r#""yes""#] {
+            let text = block(&format!(
+                r#"{{"question":"q","multi":{raw},"options":[{{"label":"A"}},{{"label":"B"}}]}}"#
+            ));
+            let (_, prompt) = parse_clave_ask(&text);
+            assert!(prompt.expect("Some").multi, "multi={raw} должно быть true");
+        }
+        // А вот ложные значения — одиночный.
+        for raw in [r#""false""#, "0", "null"] {
+            let text = block(&format!(
+                r#"{{"question":"q","multi":{raw},"options":[{{"label":"A"}},{{"label":"B"}}]}}"#
+            ));
+            let (_, prompt) = parse_clave_ask(&text);
+            assert!(
+                !prompt.expect("Some").multi,
+                "multi={raw} должно быть false"
+            );
+        }
     }
 
     #[test]

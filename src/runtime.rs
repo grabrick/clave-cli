@@ -366,9 +366,16 @@ pub(crate) fn handle_ask_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up => app.ask_move(-1),
         KeyCode::Down => app.ask_move(1),
-        KeyCode::Char(' ') => app.ask_toggle(),
         KeyCode::Enter => app.ask_submit(),
         KeyCode::Esc => app.ask_cancel(),
+        KeyCode::Backspace => app.ask_custom_backspace(),
+        KeyCode::Char(ch) => {
+            if app.ask_on_custom_row() {
+                app.ask_custom_push(ch); // печать в поле «своего ответа»
+            } else if ch == ' ' {
+                app.ask_toggle(); // Space на варианте — отметить (multi)
+            }
+        }
         _ => {}
     }
 }

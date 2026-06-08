@@ -83,33 +83,65 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
             }
             lines.push(Line::from(spans));
         } else {
-            // Строка «Свой вариант» — закрывает селектор и даёт ответить текстом.
-            lines.push(Line::from(vec![
+            // Строка «Свой ответ» — инлайн-поле ввода: печать идёт сюда, Enter отправляет.
+            let label = app.lang.choose("Свой ответ: ", "Custom: ");
+            let mut spans = vec![
                 Span::styled(marker, Style::default().fg(color)),
                 Span::styled(
-                    app.lang.choose("Свой вариант", "Custom answer"),
+                    label,
                     if selected {
                         Style::default()
                             .fg(Color::White)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)
+                        Style::default().fg(MUTED)
                     },
                 ),
-            ]));
+            ];
+            let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+            let room = inner_width.saturating_sub(used + 1);
+            if selected {
+                // Показываем хвост (где печатаем) + курсор поля.
+                if !state.custom.is_empty() && room > 0 {
+                    let chars: Vec<char> = state.custom.chars().collect();
+                    let shown: String = if chars.len() > room {
+                        chars[chars.len() - room..].iter().collect()
+                    } else {
+                        state.custom.clone()
+                    };
+                    spans.push(Span::styled(shown, Style::default().fg(Color::White)));
+                }
+                spans.push(Span::styled("▌", Style::default().fg(color)));
+            } else if state.custom.is_empty() {
+                spans.push(Span::styled(
+                    app.lang.choose("впишите свой вариант", "type your own"),
+                    Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    truncate_chars(&state.custom, room),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            lines.push(Line::from(spans));
         }
     }
 
-    // Подсказка по клавишам.
-    let hint = if state.prompt.multi {
+    // Подсказка по клавишам — зависит от того, где курсор.
+    let hint = if state.on_custom_row() {
         app.lang.choose(
-            "↑↓ · Space отметить · Enter подтвердить · Esc свой ответ",
-            "↑↓ · Space toggle · Enter confirm · Esc custom",
+            "впишите ответ · Enter отправить · ↑↓ к списку · Esc отмена",
+            "type · Enter send · ↑↓ list · Esc cancel",
+        )
+    } else if state.prompt.multi {
+        app.lang.choose(
+            "↑↓ · Space отметить · Enter подтвердить · Esc отмена",
+            "↑↓ · Space toggle · Enter confirm · Esc cancel",
         )
     } else {
         app.lang.choose(
-            "↑↓ выбрать · Enter подтвердить · Esc свой ответ",
-            "↑↓ move · Enter confirm · Esc custom",
+            "↑↓ выбрать · Enter подтвердить · Esc отмена",
+            "↑↓ move · Enter confirm · Esc cancel",
         )
     };
     lines.push(Line::styled(
