@@ -57,18 +57,22 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn stepper_line(state: &AskState, app: &App, color: Color) -> Line<'static> {
     let total = state.prompt.questions.len();
-    let current = state.step.min(total.saturating_sub(1)) + 1;
     let on_question = !state.on_confirm();
     let active = Style::default().fg(color).add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(MUTED);
+    // На вопросе — «Вопрос i/N»; на подтверждении — «Вопросы» без номера (мы уже не
+    // на конкретном вопросе), а подсвечен «Подтверждение».
+    let questions_label = if on_question {
+        format!(
+            "{} {}/{total}",
+            app.lang.choose("Вопрос", "Question"),
+            state.step + 1
+        )
+    } else {
+        app.lang.choose("Вопросы", "Questions").to_string()
+    };
     Line::from(vec![
-        Span::styled(
-            format!(
-                "{} {current}/{total}",
-                app.lang.choose("Вопрос", "Question")
-            ),
-            if on_question { active } else { dim },
-        ),
+        Span::styled(questions_label, if on_question { active } else { dim }),
         Span::styled("  ·  ", dim),
         Span::styled(
             app.lang.choose("Подтверждение", "Confirm"),
@@ -261,12 +265,12 @@ fn ask_hint(state: &AskState, app: &App) -> &'static str {
     let multi_opt = state.question().is_some_and(|q| q.multi);
     match (multi_q, multi_opt) {
         (true, true) => app.lang.choose(
-            "↑↓ · Space отметить · Tab дальше · Shift+Tab назад · Esc отмена",
-            "↑↓ · Space toggle · Tab next · Shift+Tab back · Esc cancel",
+            "↑↓ · Space/Enter отметить · Tab дальше · Shift+Tab назад · Esc отмена",
+            "↑↓ · Space/Enter toggle · Tab next · Shift+Tab back · Esc cancel",
         ),
         (true, false) => app.lang.choose(
-            "↑↓ выбрать · Tab дальше · Shift+Tab назад · Esc отмена",
-            "↑↓ move · Tab next · Shift+Tab back · Esc cancel",
+            "↑↓ выбрать · Enter/Tab дальше · Shift+Tab назад · Esc отмена",
+            "↑↓ move · Enter/Tab next · Shift+Tab back · Esc cancel",
         ),
         (false, true) => app.lang.choose(
             "↑↓ · Space отметить · Enter подтвердить · Esc отмена",
