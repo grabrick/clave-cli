@@ -55,13 +55,15 @@ pub(crate) fn chat_prompt(message: &str, context: &str, lang: Language, mode: Ch
         "Если для продолжения нужен выбор пользователя, можешь в САМОМ КОНЦЕ ответа вывести \
          ровно один блок ```clave-ask с JSON: {\"question\":\"...\",\"multi\":false,\
          \"options\":[{\"label\":\"...\",\"note\":\"...\"}]}. Минимум 2 варианта, label кратко, \
-         note — необязательная подсказка, multi=true если можно выбрать несколько. Блок — \
+         note — необязательная подсказка, multi=true если можно выбрать несколько. Можно \
+         задать несколько вопросов сразу: {\"questions\":[{...},{...}]} (до 4). Блок — \
          последнее в ответе; после него ничего не пиши и не отвечай за пользователя. \
          Используй редко — только когда выбор действительно нужен.",
         "If you need the user to choose before continuing, you MAY end your answer with \
          exactly one ```clave-ask block of JSON: {\"question\":\"...\",\"multi\":false,\
          \"options\":[{\"label\":\"...\",\"note\":\"...\"}]}. At least 2 options, short labels, \
-         optional note, multi=true to allow several. The block must be the very last thing — \
+         optional note, multi=true to allow several. You may ask several questions at once: \
+         {\"questions\":[{...},{...}]} (up to 4). The block must be the very last thing — \
          write nothing after it and do not answer for the user. Use sparingly, only when a \
          choice is genuinely needed.",
     );

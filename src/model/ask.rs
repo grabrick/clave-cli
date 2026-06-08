@@ -7,12 +7,18 @@ pub(crate) struct AskOption {
     pub(crate) note: Option<String>,
 }
 
-/// Разобранный запрос выбора от модели (блок ```clave-ask).
+/// Один вопрос с вариантами.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AskPrompt {
+pub(crate) struct AskQuestion {
     pub(crate) question: String,
     pub(crate) multi: bool,
     pub(crate) options: Vec<AskOption>,
+}
+
+/// Разобранный запрос выбора (блок ```clave-ask): один или несколько вопросов.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AskPrompt {
+    pub(crate) questions: Vec<AskQuestion>,
 }
 
 struct AskBlock {
@@ -71,13 +77,25 @@ fn is_truthy(value: &Value) -> bool {
 
 fn parse_ask_json(json: &str) -> Option<AskPrompt> {
     let value: Value = serde_json::from_str(json).ok()?;
+    // Форма с несколькими вопросами: {"questions":[ {...}, ... ]}.
+    if let Some(arr) = value.get("questions").and_then(Value::as_array) {
+        let questions: Vec<AskQuestion> = arr.iter().filter_map(parse_question).collect();
+        return (!questions.is_empty()).then_some(AskPrompt { questions });
+    }
+    // Одиночная форма: {question, multi, options}.
+    let question = parse_question(&value)?;
+    Some(AskPrompt {
+        questions: vec![question],
+    })
+}
+
+fn parse_question(value: &Value) -> Option<AskQuestion> {
     let question = value.get("question")?.as_str()?.trim().to_string();
     if question.is_empty() {
         return None;
     }
     // Терпимо и к названию поля, и к значению: модели пишут его по-разному
     // (multi / multiple / multiSelect / multi_select) и не всегда булевым ("true", 1).
-    // Строгий get("multi") + as_bool() молча давал false → множественный «ломался».
     let multi = value.as_object().is_some_and(|obj| {
         obj.iter()
             .any(|(key, val)| key.to_ascii_lowercase().contains("multi") && is_truthy(val))
@@ -102,11 +120,8 @@ fn parse_ask_json(json: &str) -> Option<AskPrompt> {
         options.push(AskOption { label, note });
     }
 
-    // Селектор имеет смысл только при ≥2 вариантах — иначе фолбэк в обычный текст.
-    if options.len() < 2 {
-        return None;
-    }
-    Some(AskPrompt {
+    // Вопрос с выбором имеет смысл только при ≥2 вариантах — иначе фолбэк в текст.
+    (options.len() >= 2).then_some(AskQuestion {
         question,
         multi,
         options,
@@ -130,12 +145,14 @@ mod tests {
         let (prose, prompt) = parse_clave_ask(&text);
         let prompt = prompt.expect("валидный блок → Some");
         assert_eq!(prose, "", "блок без прозы → пустой текст");
-        assert_eq!(prompt.question, "Какой подход?");
-        assert!(!prompt.multi);
-        assert_eq!(prompt.options.len(), 2);
-        assert_eq!(prompt.options[0].label, "JWT");
-        assert_eq!(prompt.options[0].note.as_deref(), Some("stateless"));
-        assert_eq!(prompt.options[1].note, None, "note необязателен");
+        assert_eq!(prompt.questions.len(), 1);
+        let q = &prompt.questions[0];
+        assert_eq!(q.question, "Какой подход?");
+        assert!(!q.multi);
+        assert_eq!(q.options.len(), 2);
+        assert_eq!(q.options[0].label, "JWT");
+        assert_eq!(q.options[0].note.as_deref(), Some("stateless"));
+        assert_eq!(q.options[1].note, None, "note необязателен");
     }
 
     #[test]
@@ -146,8 +163,25 @@ mod tests {
         );
         let (_, prompt) = parse_clave_ask(&text);
         let prompt = prompt.expect("Some");
-        assert!(prompt.multi);
-        assert_eq!(prompt.options.len(), 3);
+        assert_eq!(prompt.questions.len(), 1);
+        assert!(prompt.questions[0].multi);
+        assert_eq!(prompt.questions[0].options.len(), 3);
+    }
+
+    #[test]
+    fn parses_several_questions() {
+        let text = block(
+            r#"{"questions":[
+                {"question":"БД?","options":[{"label":"PG"},{"label":"SQLite"}]},
+                {"question":"Кэш?","multi":true,"options":[{"label":"Redis"},{"label":"Memcached"}]}
+            ]}"#,
+        );
+        let (_, prompt) = parse_clave_ask(&text);
+        let prompt = prompt.expect("Some");
+        assert_eq!(prompt.questions.len(), 2);
+        assert_eq!(prompt.questions[0].question, "БД?");
+        assert!(!prompt.questions[0].multi);
+        assert!(prompt.questions[1].multi);
     }
 
     #[test]
@@ -160,7 +194,7 @@ mod tests {
                 ));
                 let (_, prompt) = parse_clave_ask(&text);
                 assert!(
-                    prompt.expect("Some").multi,
+                    prompt.expect("Some").questions[0].multi,
                     "{field}={raw} должно быть true"
                 );
             }
@@ -172,12 +206,12 @@ mod tests {
             ));
             let (_, prompt) = parse_clave_ask(&text);
             assert!(
-                !prompt.expect("Some").multi,
+                !prompt.expect("Some").questions[0].multi,
                 "multi={raw} должно быть false"
             );
         }
         let no_field = block(r#"{"question":"q","options":[{"label":"A"},{"label":"B"}]}"#);
-        assert!(!parse_clave_ask(&no_field).1.expect("Some").multi);
+        assert!(!parse_clave_ask(&no_field).1.expect("Some").questions[0].multi);
     }
 
     #[test]
@@ -222,8 +256,8 @@ mod tests {
         let text =
             block(r#"{"question":"q","options":[{"label":"A"},{"label":"  "},{"label":"B"}]}"#);
         let (_, prompt) = parse_clave_ask(&text);
-        let prompt = prompt.expect("Some");
-        assert_eq!(prompt.options.len(), 2);
-        assert_eq!(prompt.options[1].label, "B");
+        let q = &prompt.expect("Some").questions[0];
+        assert_eq!(q.options.len(), 2);
+        assert_eq!(q.options[1].label, "B");
     }
 }

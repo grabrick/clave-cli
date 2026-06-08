@@ -366,6 +366,9 @@ pub(crate) fn handle_ask_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up => app.ask_move(-1),
         KeyCode::Down => app.ask_move(1),
+        // Переключение между вопросами (визард на несколько вопросов).
+        KeyCode::Tab | KeyCode::Right => app.ask_next(),
+        KeyCode::BackTab | KeyCode::Left => app.ask_prev(),
         KeyCode::Enter => app.ask_submit(),
         KeyCode::Esc => app.ask_cancel(),
         KeyCode::Backspace => app.ask_custom_backspace(),

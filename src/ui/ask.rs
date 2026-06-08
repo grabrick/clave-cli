@@ -1,9 +1,14 @@
 use super::*;
 
-/// Высота панели селектора: рамка + строка вопроса + видимые варианты + подсказка.
+/// Высота панели селектора: рамка + (степпер) + контент + подсказка.
 pub(crate) fn ask_panel_height(state: &AskState, cap: u16) -> u16 {
-    let list = (state.rows() as u16).min(8); // варианты + «Свой вариант», максимум видимых
-    (2 + 1 + list + 1).min(cap).max(4)
+    let stepper = u16::from(state.multi_question());
+    let body = if state.on_confirm() {
+        (state.confirm_rows() as u16).min(8)
+    } else {
+        1 + (state.rows() as u16).min(8) // строка вопроса + варианты
+    };
+    (2 + stepper + body + 1).min(cap).max(4)
 }
 
 pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -15,16 +20,10 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 
     let color = app.theme.accent();
-    let title = if state.prompt.multi {
-        app.lang
-            .choose(" Выбор (несколько) ", " Choose (multiple) ")
-    } else {
-        app.lang.choose(" Выбор ", " Choose ")
-    };
     let block = Block::default()
         .borders(Borders::ALL)
         .title(Line::from(Span::styled(
-            title,
+            app.lang.choose(" Выбор ", " Choose "),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         )))
         .border_style(Style::default().fg(color));
@@ -33,29 +32,83 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if inner.height == 0 {
         return;
     }
-    let inner_width = inner.width as usize;
-
+    let iw = inner.width as usize;
     let mut lines: Vec<Line<'static>> = Vec::new();
-    // Вопрос модели (жирный, обрезан по ширине).
+
+    // Степпер «Вопрос i/N · Подтверждение» — только при нескольких вопросах.
+    if state.multi_question() {
+        lines.push(stepper_line(state, app, color));
+    }
+
+    if state.on_confirm() {
+        draw_confirm_rows(state, app, color, iw, inner.height, &mut lines);
+    } else {
+        draw_question_rows(state, app, color, iw, inner.height, &mut lines);
+    }
+
+    // Подсказка по клавишам — зависит от шага.
     lines.push(Line::styled(
-        truncate_chars(&state.prompt.question, inner_width),
+        truncate_chars(ask_hint(state, app), iw),
+        Style::default().fg(MUTED),
+    ));
+
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn stepper_line(state: &AskState, app: &App, color: Color) -> Line<'static> {
+    let total = state.prompt.questions.len();
+    let current = state.step.min(total.saturating_sub(1)) + 1;
+    let on_question = !state.on_confirm();
+    let active = Style::default().fg(color).add_modifier(Modifier::BOLD);
+    let dim = Style::default().fg(MUTED);
+    Line::from(vec![
+        Span::styled(
+            format!(
+                "{} {current}/{total}",
+                app.lang.choose("Вопрос", "Question")
+            ),
+            if on_question { active } else { dim },
+        ),
+        Span::styled("  ·  ", dim),
+        Span::styled(
+            app.lang.choose("Подтверждение", "Confirm"),
+            if on_question { dim } else { active },
+        ),
+    ])
+}
+
+fn draw_question_rows(
+    state: &AskState,
+    app: &App,
+    color: Color,
+    iw: usize,
+    inner_h: u16,
+    lines: &mut Vec<Line<'static>>,
+) {
+    let (Some(question), Some(answer)) = (state.question(), state.current_answer()) else {
+        return;
+    };
+    // Текст вопроса (жирный, обрезан).
+    lines.push(Line::styled(
+        truncate_chars(&question.question, iw),
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     ));
 
-    // Список вариантов + «Свой вариант» со скроллом, удерживающим курсор в зоне.
-    let list_capacity = (inner.height as usize).saturating_sub(2).max(1); // минус вопрос и подсказка
-    let total = state.rows();
-    let offset = command_palette_scroll_offset(state.cursor, list_capacity, total);
-    for idx in offset..(offset + list_capacity).min(total) {
-        let selected = idx == state.cursor;
+    let capacity = (inner_h as usize)
+        .saturating_sub(lines.len() + 1) // уже занятое + строка подсказки
+        .max(1);
+    let total = question.options.len() + 1; // + «Свой ответ»
+    let offset = command_palette_scroll_offset(answer.cursor, capacity, total);
+    for idx in offset..(offset + capacity).min(total) {
+        let selected = idx == answer.cursor;
         let marker = if selected { "› " } else { "  " };
-        if idx < state.prompt.options.len() {
-            let opt = &state.prompt.options[idx];
+        if idx < question.options.len() {
+            let opt = &question.options[idx];
             let mut spans = vec![Span::styled(marker, Style::default().fg(color))];
-            if state.prompt.multi {
-                let checked = state.checked[idx];
+            if question.multi {
+                let checked = answer.checked[idx];
                 spans.push(Span::styled(
                     if checked { "[x] " } else { "[ ] " },
                     Style::default().fg(if checked { color } else { MUTED }),
@@ -73,7 +126,7 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
             ));
             if let Some(note) = &opt.note {
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-                let room = inner_width.saturating_sub(used + 3);
+                let room = iw.saturating_sub(used + 3);
                 if room > 4 {
                     spans.push(Span::styled(
                         format!(" — {}", truncate_chars(note, room)),
@@ -83,71 +136,145 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
             }
             lines.push(Line::from(spans));
         } else {
-            // Строка «Свой ответ» — инлайн-поле ввода: печать идёт сюда, Enter отправляет.
-            let label = app.lang.choose("Свой ответ: ", "Custom: ");
-            let mut spans = vec![
-                Span::styled(marker, Style::default().fg(color)),
+            lines.push(custom_field_line(answer, app, color, iw, selected));
+        }
+    }
+}
+
+fn custom_field_line(
+    answer: &AnswerState,
+    app: &App,
+    color: Color,
+    iw: usize,
+    selected: bool,
+) -> Line<'static> {
+    let label = app.lang.choose("Свой ответ: ", "Custom: ");
+    let mut spans = vec![
+        Span::styled(
+            if selected { "› " } else { "  " },
+            Style::default().fg(color),
+        ),
+        Span::styled(
+            label,
+            if selected {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(MUTED)
+            },
+        ),
+    ];
+    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let room = iw.saturating_sub(used + 1);
+    if selected {
+        if !answer.custom.is_empty() && room > 0 {
+            let chars: Vec<char> = answer.custom.chars().collect();
+            let shown: String = if chars.len() > room {
+                chars[chars.len() - room..].iter().collect()
+            } else {
+                answer.custom.clone()
+            };
+            spans.push(Span::styled(shown, Style::default().fg(Color::White)));
+        }
+        spans.push(Span::styled("▌", Style::default().fg(color)));
+    } else if answer.custom.is_empty() {
+        spans.push(Span::styled(
+            app.lang.choose("впишите свой вариант", "type your own"),
+            Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+        ));
+    } else {
+        spans.push(Span::styled(
+            truncate_chars(&answer.custom, room),
+            Style::default().fg(MUTED),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn draw_confirm_rows(
+    state: &AskState,
+    app: &App,
+    color: Color,
+    iw: usize,
+    inner_h: u16,
+    lines: &mut Vec<Line<'static>>,
+) {
+    let total = state.confirm_rows(); // вопросы + «Отправить»
+    let capacity = (inner_h as usize).saturating_sub(lines.len() + 1).max(1);
+    let offset = command_palette_scroll_offset(state.confirm_cursor, capacity, total);
+    let questions = state.prompt.questions.len();
+    for idx in offset..(offset + capacity).min(total) {
+        let selected = idx == state.confirm_cursor;
+        let marker = if selected { "› " } else { "  " };
+        if idx < questions {
+            let chosen = state.chosen(idx);
+            let answer = if chosen.is_empty() {
+                app.lang.choose("—", "—").to_string()
+            } else {
+                chosen.join(", ")
+            };
+            // «N. вопрос: ответ» — вопрос приглушён, ответ ярче.
+            let q_short = truncate_chars(&state.prompt.questions[idx].question, iw / 2);
+            let prefix = format!("{marker}{}. {q_short}: ", idx + 1);
+            let room = iw.saturating_sub(prefix.chars().count());
+            lines.push(Line::from(vec![
                 Span::styled(
-                    label,
+                    prefix,
                     if selected {
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(Color::White)
                     } else {
                         Style::default().fg(MUTED)
                     },
                 ),
-            ];
-            let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-            let room = inner_width.saturating_sub(used + 1);
-            if selected {
-                // Показываем хвост (где печатаем) + курсор поля.
-                if !state.custom.is_empty() && room > 0 {
-                    let chars: Vec<char> = state.custom.chars().collect();
-                    let shown: String = if chars.len() > room {
-                        chars[chars.len() - room..].iter().collect()
-                    } else {
-                        state.custom.clone()
-                    };
-                    spans.push(Span::styled(shown, Style::default().fg(Color::White)));
-                }
-                spans.push(Span::styled("▌", Style::default().fg(color)));
-            } else if state.custom.is_empty() {
-                spans.push(Span::styled(
-                    app.lang.choose("впишите свой вариант", "type your own"),
-                    Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
-                ));
-            } else {
-                spans.push(Span::styled(
-                    truncate_chars(&state.custom, room),
-                    Style::default().fg(MUTED),
-                ));
-            }
-            lines.push(Line::from(spans));
+                Span::styled(
+                    truncate_chars(&answer, room.max(4)),
+                    Style::default()
+                        .fg(if selected {
+                            Color::White
+                        } else {
+                            app.theme.accent_soft()
+                        })
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(marker, Style::default().fg(color)),
+                Span::styled(
+                    app.lang.choose("Отправить ответы", "Send answers"),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
+            ]));
         }
     }
+}
 
-    // Подсказка по клавишам — зависит от того, где курсор.
-    let hint = if state.on_custom_row() {
-        app.lang.choose(
-            "впишите ответ · Enter отправить · ↑↓ к списку · Esc отмена",
-            "type · Enter send · ↑↓ list · Esc cancel",
-        )
-    } else if state.prompt.multi {
-        app.lang.choose(
+fn ask_hint(state: &AskState, app: &App) -> &'static str {
+    if state.on_confirm() {
+        return app.lang.choose(
+            "↑↓ выбрать · Enter правка/отправить · ←/Shift+Tab назад · Esc отмена",
+            "↑↓ move · Enter edit/send · ←/Shift+Tab back · Esc cancel",
+        );
+    }
+    let multi_q = state.multi_question();
+    let multi_opt = state.question().is_some_and(|q| q.multi);
+    match (multi_q, multi_opt) {
+        (true, true) => app.lang.choose(
+            "↑↓ · Space отметить · Tab дальше · Shift+Tab назад · Esc отмена",
+            "↑↓ · Space toggle · Tab next · Shift+Tab back · Esc cancel",
+        ),
+        (true, false) => app.lang.choose(
+            "↑↓ выбрать · Tab дальше · Shift+Tab назад · Esc отмена",
+            "↑↓ move · Tab next · Shift+Tab back · Esc cancel",
+        ),
+        (false, true) => app.lang.choose(
             "↑↓ · Space отметить · Enter подтвердить · Esc отмена",
             "↑↓ · Space toggle · Enter confirm · Esc cancel",
-        )
-    } else {
-        app.lang.choose(
+        ),
+        (false, false) => app.lang.choose(
             "↑↓ выбрать · Enter подтвердить · Esc отмена",
             "↑↓ move · Enter confirm · Esc cancel",
-        )
-    };
-    lines.push(Line::styled(
-        truncate_chars(hint, inner_width),
-        Style::default().fg(MUTED),
-    ));
-
-    frame.render_widget(Paragraph::new(lines), inner);
+        ),
+    }
 }
