@@ -75,9 +75,13 @@ fn parse_ask_json(json: &str) -> Option<AskPrompt> {
     if question.is_empty() {
         return None;
     }
-    // Нестрого: модели часто отдают multi не булевым (строкой "true", числом 1) —
-    // иначе строгий as_bool() молча даёт false и множественный выбор «ломается».
-    let multi = value.get("multi").is_some_and(is_truthy);
+    // Терпимо и к названию поля, и к значению: модели пишут его по-разному
+    // (multi / multiple / multiSelect / multi_select) и не всегда булевым ("true", 1).
+    // Строгий get("multi") + as_bool() молча давал false → множественный «ломался».
+    let multi = value.as_object().is_some_and(|obj| {
+        obj.iter()
+            .any(|(key, val)| key.to_ascii_lowercase().contains("multi") && is_truthy(val))
+    });
     let options_val = value.get("options")?.as_array()?;
 
     let mut options = Vec::new();
@@ -148,15 +152,20 @@ mod tests {
 
     #[test]
     fn multi_is_parsed_leniently() {
-        // Модель отдала multi строкой "true" — всё равно множественный выбор.
-        for raw in [r#""true""#, "1", r#""yes""#] {
-            let text = block(&format!(
-                r#"{{"question":"q","multi":{raw},"options":[{{"label":"A"}},{{"label":"B"}}]}}"#
-            ));
-            let (_, prompt) = parse_clave_ask(&text);
-            assert!(prompt.expect("Some").multi, "multi={raw} должно быть true");
+        // Истинно: разные имена поля и разные формы значения.
+        for field in ["multi", "multiple", "multiSelect", "multi_select"] {
+            for raw in [r#""true""#, "1", r#""yes""#, "true"] {
+                let text = block(&format!(
+                    r#"{{"question":"q","{field}":{raw},"options":[{{"label":"A"}},{{"label":"B"}}]}}"#
+                ));
+                let (_, prompt) = parse_clave_ask(&text);
+                assert!(
+                    prompt.expect("Some").multi,
+                    "{field}={raw} должно быть true"
+                );
+            }
         }
-        // А вот ложные значения — одиночный.
+        // Ложно: явный false / 0 / null / отсутствие поля — одиночный.
         for raw in [r#""false""#, "0", "null"] {
             let text = block(&format!(
                 r#"{{"question":"q","multi":{raw},"options":[{{"label":"A"}},{{"label":"B"}}]}}"#
@@ -167,6 +176,8 @@ mod tests {
                 "multi={raw} должно быть false"
             );
         }
+        let no_field = block(r#"{"question":"q","options":[{"label":"A"},{"label":"B"}]}"#);
+        assert!(!parse_clave_ask(&no_field).1.expect("Some").multi);
     }
 
     #[test]
