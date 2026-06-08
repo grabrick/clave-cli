@@ -220,9 +220,10 @@ impl App {
         }
     }
 
-    /// Enter. Несколько вопросов: на вопросе — следующий шаг; на подтверждении —
-    /// отправить (на строке «Отправить») или вернуться к правке вопроса. Один вопрос —
-    /// отправляем сразу (свой ответ или выбор).
+    /// Enter в визарде (несколько вопросов): на множественном варианте — отметить
+    /// (как Space, переход дальше — только Tab); на одиночном/строке «свой ответ» —
+    /// дальше; на подтверждении — отправить или вернуться к правке вопроса.
+    /// Один вопрос — отправляем сразу (свой ответ или выбор).
     pub(crate) fn ask_submit(&mut self) {
         let Some(state) = &self.ask else {
             return;
@@ -232,12 +233,17 @@ impl App {
             let on_confirm = state.on_confirm();
             let on_send = state.on_send_row();
             let target = state.confirm_cursor;
-            if !on_confirm {
-                self.ask_next();
-            } else if on_send {
-                self.ask_send_all();
-            } else if let Some(state) = &mut self.ask {
-                state.step = target; // вернуться к правке выбранного вопроса
+            let toggle_here = state.question().is_some_and(|q| q.multi) && !state.on_custom_row();
+            if on_confirm {
+                if on_send {
+                    self.ask_send_all();
+                } else if let Some(state) = &mut self.ask {
+                    state.step = target; // вернуться к правке выбранного вопроса
+                }
+            } else if toggle_here {
+                self.ask_toggle(); // множественный: Enter отмечает вариант, не прыгает
+            } else {
+                self.ask_next(); // одиночный или «свой ответ» → следующий шаг
             }
             return;
         }
