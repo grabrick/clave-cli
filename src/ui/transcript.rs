@@ -130,6 +130,61 @@ fn inline_code_spans(text: &str) -> Vec<Span<'static>> {
     spans
 }
 
+/// Разбивает строку на спаны, подсвечивая inline-код (`код`) и **жирный** текст.
+/// Маркеры удаляются — остаётся только стиль. Inline-код имеет приоритет над
+/// жирным, поэтому `**` внутри кода трактуется буквально. Незакрытые маркеры
+/// остаются обычным текстом (перенос строки мог разорвать пару).
+fn inline_md_spans(text: &str) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // Inline-код в обратных кавычках.
+        if bytes[i] == b'`' {
+            if let Some(close) = text[i + 1..].find('`') {
+                if !buf.is_empty() {
+                    spans.push(Span::raw(std::mem::take(&mut buf)));
+                }
+                spans.push(Span::styled(
+                    text[i + 1..i + 1 + close].to_string(),
+                    Style::default().fg(Color::Indexed(180)),
+                ));
+                i += 1 + close + 1;
+                continue;
+            }
+        }
+        // **Жирный** текст (с возможным inline-кодом внутри).
+        if bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'*') {
+            if let Some(close) = text[i + 2..].find("**") {
+                let inner = &text[i + 2..i + 2 + close];
+                if !inner.is_empty() {
+                    if !buf.is_empty() {
+                        spans.push(Span::raw(std::mem::take(&mut buf)));
+                    }
+                    for mut span in inline_code_spans(inner) {
+                        span.style = span.style.add_modifier(Modifier::BOLD);
+                        spans.push(span);
+                    }
+                    i += 2 + close + 2;
+                    continue;
+                }
+            }
+        }
+        // Обычный символ — копим в буфер, шагаем по границе UTF-8.
+        let ch = text[i..].chars().next().unwrap();
+        buf.push(ch);
+        i += ch.len_utf8();
+    }
+    if !buf.is_empty() {
+        spans.push(Span::raw(buf));
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw(text.to_string()));
+    }
+    spans
+}
+
 pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) -> Line<'static> {
     if line.starts_with("◆ ") {
         Line::from(vec![
@@ -180,15 +235,14 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
     } else if line.starts_with("⎿ ") || line.trim_start().starts_with('⎿') {
         Line::styled(line.to_string(), Style::default().fg(Color::DarkGray))
     } else if let Some(rest) = line.strip_prefix("⏺ ") {
-        Line::from(vec![
-            Span::styled(
-                "⏺ ",
-                Style::default()
-                    .fg(theme.accent())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(rest.to_string()),
-        ])
+        let mut spans = vec![Span::styled(
+            "⏺ ",
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        )];
+        spans.extend(inline_md_spans(rest));
+        Line::from(spans)
     } else if line.starts_with("✻ ") || line.starts_with("✦ ") {
         Line::styled(
             line.to_string(),
@@ -235,7 +289,7 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
         )
     } else if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
         let mut spans = vec![Span::styled("• ", Style::default().fg(theme.accent()))];
-        spans.extend(inline_code_spans(item));
+        spans.extend(inline_md_spans(item));
         Line::from(spans)
     } else if let Some(quote) = line.strip_prefix("> ") {
         Line::styled(
@@ -245,7 +299,7 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .add_modifier(Modifier::ITALIC),
         )
     } else {
-        Line::from(inline_code_spans(line))
+        Line::from(inline_md_spans(line))
     }
 }
 
@@ -393,6 +447,40 @@ mod tests {
         let one = inline_code_spans("broken ` tail");
         let joined: String = one.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(joined, "broken ` tail");
+    }
+
+    #[test]
+    fn inline_bold_strips_markers_and_styles() {
+        // **жирный** → спан с модификатором BOLD без звёздочек.
+        let spans = inline_md_spans("есть **важное** слово");
+        let joined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "есть важное слово");
+        assert!(
+            spans
+                .iter()
+                .any(|s| s.content == "важное" && s.style.add_modifier.contains(Modifier::BOLD)),
+            "жирный фрагмент несёт модификатор BOLD"
+        );
+        // Маркеры `**` не должны просочиться ни в один спан.
+        assert!(spans.iter().all(|s| !s.content.contains('*')));
+
+        // Регрессия из реального бага: нумерованный пункт «1. **Память:** …»
+        // идёт в общую ветку и должен потерять звёздочки, но не цифры.
+        let line = style_transcript_line("1. **Память:** важно", Language::Ru, Theme::Purple);
+        let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "1. Память: важно");
+        assert!(line
+            .spans
+            .iter()
+            .any(|s| s.content == "Память:" && s.style.add_modifier.contains(Modifier::BOLD)));
+
+        // Незакрытый `**` остаётся буквальным и не съедает последующий inline-код.
+        let spans = inline_md_spans("a ** b `c`");
+        let joined: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "a ** b c");
+        assert!(spans
+            .iter()
+            .any(|s| s.content == "c" && s.style.fg == Some(Color::Indexed(180))));
     }
 
     #[test]
