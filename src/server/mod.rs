@@ -136,13 +136,39 @@ fn serve_token() -> String {
     env::var("CLAVE_SERVE_TOKEN")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_nanos())
-                .unwrap_or(0);
-            format!("clave-{}-{now:x}", std::process::id())
-        })
+        .unwrap_or_else(random_token)
+}
+
+/// Случайный токен из /dev/urandom (192 бита hex). Прежний `pid+время` был
+/// предсказуем и перебираем — для токена, открывающего исполнение кода, это плохо.
+fn random_token() -> String {
+    let mut buf = [0u8; 24];
+    if fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut buf))
+        .is_ok()
+    {
+        return buf.iter().map(|byte| format!("{byte:02x}")).collect();
+    }
+    // Фолбэк (на поддерживаемых ОС /dev/urandom есть всегда) — чтобы не паниковать.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    format!("clave-{}-{now:x}", std::process::id())
+}
+
+/// Сравнение токена за постоянное время: без раннего выхода на первом отличии
+/// байтов (защита от тайминг-атаки). Длина токена не секрет — её сверяем сразу.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 impl ServeRuntimeConfig {
@@ -306,7 +332,10 @@ fn split_url(url: &str) -> (String, &str) {
 }
 
 fn authorized(request: &Request, query: &str, token: &str) -> bool {
-    if query_value(query, "token").as_deref() == Some(token) {
+    if query_value(query, "token")
+        .as_deref()
+        .is_some_and(|value| constant_time_eq(value, token))
+    {
         return true;
     }
 
@@ -316,7 +345,7 @@ fn authorized(request: &Request, query: &str, token: &str) -> bool {
                 .value
                 .as_str()
                 .strip_prefix("Bearer ")
-                .is_some_and(|value| value == token)
+                .is_some_and(|value| constant_time_eq(value, token))
     })
 }
 
@@ -701,4 +730,28 @@ fn header(name: &str, value: &str) -> Header {
 #[allow(dead_code)]
 fn response_from_string(status: u16, body: String) -> Response<Cursor<Vec<u8>>> {
     Response::from_string(body).with_status_code(StatusCode(status))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constant_time_eq_matches_only_identical() {
+        assert!(constant_time_eq("abc123", "abc123"));
+        assert!(!constant_time_eq("abc123", "abc124"));
+        assert!(!constant_time_eq("abc", "abc123")); // разная длина
+        assert!(!constant_time_eq("", "x"));
+        assert!(constant_time_eq("", ""));
+    }
+
+    #[test]
+    fn random_token_is_long_and_unpredictable() {
+        let a = random_token();
+        let b = random_token();
+        // 24 байта → 48 hex-символов; и два токена не совпадают (не из pid+время).
+        assert_eq!(a.len(), 48, "ожидаем 192-битный hex-токен");
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b, "токены должны быть случайными, а не предсказуемыми");
+    }
 }

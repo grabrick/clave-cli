@@ -333,10 +333,27 @@ fn buffer_to_lines(buf: &Buffer) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// Убирает управляющие символы (ESC/CR/BEL/BS/…) из текста перед выводом в
+/// терминал. Иначе ответ модели или содержимое прочитанного агентом файла могло бы
+/// инжектить ANSI/OSC-последовательности (смена заголовка, OSC 52 → буфер обмена,
+/// подмена UI). Цвет/стиль идут отдельно (`apply_style`), а не из контента, так что
+/// собственный UI не страдает. Табы сохраняем; рамки/кириллица — не control, целы.
+fn sanitize_terminal_text(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.chars().any(|ch| ch.is_control() && ch != '\t') {
+        std::borrow::Cow::Owned(
+            text.chars()
+                .filter(|ch| !ch.is_control() || *ch == '\t')
+                .collect(),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
 fn queue_line(out: &mut impl Write, line: &Line<'static>) -> io::Result<()> {
     for span in &line.spans {
         apply_style(out, span.style)?;
-        queue!(out, Print(span.content.as_ref()))?;
+        queue!(out, Print(sanitize_terminal_text(&span.content)))?;
         queue!(out, SetAttribute(CtAttr::Reset), ResetColor)?;
     }
     Ok(())
@@ -393,5 +410,27 @@ fn to_crossterm_color(color: Color) -> CtColor {
         Color::White => CtColor::White,
         Color::Indexed(i) => CtColor::AnsiValue(i),
         Color::Rgb(r, g, b) => CtColor::Rgb { r, g, b },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_strips_escape_and_control_keeps_text() {
+        // ESC/OSC/цвет/CR/BEL — вырезаются (инъекция в терминал невозможна).
+        let evil = "НАЧАЛО\u{1b}[31mКРАСНЫЙ\u{1b}]0;PWNED\u{7}\rКОНЕЦ";
+        let clean = sanitize_terminal_text(evil);
+        assert!(!clean.contains('\u{1b}'), "ESC должен быть убран");
+        assert!(!clean.contains('\u{7}') && !clean.contains('\r'));
+        assert_eq!(clean, "НАЧАЛО[31mКРАСНЫЙ]0;PWNEDКОНЕЦ");
+        // Обычный текст, кириллица, рамки и табы — нетронуты (и без аллокации).
+        let safe = "│ ответ\tкод ╭─╮ Ω";
+        assert!(matches!(
+            sanitize_terminal_text(safe),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert_eq!(sanitize_terminal_text(safe), safe);
     }
 }
