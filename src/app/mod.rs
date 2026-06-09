@@ -118,14 +118,11 @@ pub(crate) struct App {
 impl App {
     pub(crate) fn new() -> Self {
         let (tx, rx) = mpsc::channel();
-        migrate_legacy_state_if_needed();
         let config_path = config_path();
         let history_path = history_path();
         let chats_dir = chats_dir();
         let mut config = load_config(&config_path);
-        if env::var("CLAVE_SKIP_ONBOARDING").ok().as_deref() == Some("1")
-            || env::var("DUEL_SKIP_ONBOARDING").ok().as_deref() == Some("1")
-        {
+        if env::var("CLAVE_SKIP_ONBOARDING").ok().as_deref() == Some("1") {
             config.onboarding_done = true;
         }
         config.effort_index = normalize_common_effort_index(config.effort_index);

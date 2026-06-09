@@ -100,35 +100,8 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     truncated
 }
 
-pub(crate) fn migrate_legacy_state_if_needed() {
-    if env::var("CLAVE_HOME").is_ok()
-        || env::var("DUEL_HOME").is_ok()
-        || env::var("CLAVE_CONFIG").is_ok()
-        || env::var("DUEL_CONFIG").is_ok()
-    {
-        return;
-    }
-
-    let Some(legacy_dir) = default_home_state_dir(LEGACY_STATE_DIR_NAME) else {
-        return;
-    };
-    let Some(new_dir) = default_home_state_dir(STATE_DIR_NAME) else {
-        return;
-    };
-
-    if new_dir.exists() || !legacy_dir.exists() {
-        return;
-    }
-
-    let _ = copy_dir_all(&legacy_dir, &new_dir);
-}
-
 pub(crate) fn clave_state_dir() -> PathBuf {
     if let Ok(path) = env::var("CLAVE_HOME") {
-        return PathBuf::from(path);
-    }
-
-    if let Ok(path) = env::var("DUEL_HOME") {
         return PathBuf::from(path);
     }
 
@@ -141,21 +114,6 @@ fn default_home_state_dir(name: &str) -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(name))
 }
 
-fn copy_dir_all(source: &Path, destination: &Path) -> io::Result<()> {
-    fs::create_dir_all(destination)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir_all(&source_path, &destination_path)?;
-        } else if !destination_path.exists() {
-            fs::copy(&source_path, &destination_path)?;
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn history_path() -> PathBuf {
     clave_state_dir().join("history")
 }
@@ -166,10 +124,6 @@ pub(crate) fn chats_dir() -> PathBuf {
 
 pub(crate) fn config_path() -> PathBuf {
     if let Ok(path) = env::var("CLAVE_CONFIG") {
-        return PathBuf::from(path);
-    }
-
-    if let Ok(path) = env::var("DUEL_CONFIG") {
         return PathBuf::from(path);
     }
 
@@ -434,26 +388,20 @@ pub(crate) fn chat_path_for_id(chats_dir: &Path, chat_id: &str) -> PathBuf {
     ))
 }
 
-/// Найти файл чата по id с любым известным расширением (.clave или legacy .duel).
+/// Найти файл чата по id (расширение `.clave`).
 pub(crate) fn existing_chat_path(chats_dir: &Path, chat_id: &str) -> Option<PathBuf> {
     let id = sanitize_chat_id(chat_id);
     if id.is_empty() {
         return None;
     }
-    for ext in [CHAT_FILE_EXTENSION, LEGACY_CHAT_FILE_EXTENSION] {
-        let path = chats_dir.join(format!("{id}.{ext}"));
-        if path.exists() {
-            return Some(path);
-        }
-    }
-    None
+    let path = chats_dir.join(format!("{id}.{CHAT_FILE_EXTENSION}"));
+    path.exists().then_some(path)
 }
 
 pub(crate) fn sanitize_chat_id(value: &str) -> String {
     value
         .trim()
         .trim_end_matches(&format!(".{}", CHAT_FILE_EXTENSION))
-        .trim_end_matches(&format!(".{}", LEGACY_CHAT_FILE_EXTENSION))
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
         .collect()
@@ -515,12 +463,7 @@ pub(crate) fn list_saved_chats(chats_dir: &Path, limit: usize) -> Vec<ChatSummar
     let mut chats = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| {
-            matches!(
-                path.extension().and_then(|ext| ext.to_str()),
-                Some(CHAT_FILE_EXTENSION) | Some(LEGACY_CHAT_FILE_EXTENSION)
-            )
-        })
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(CHAT_FILE_EXTENSION))
         .filter_map(|path| chat_summary(&path))
         .collect::<Vec<_>>();
 
@@ -684,27 +627,6 @@ mod tests {
         let (nid, _, nlines) = restore_or_create_chat(&dir, None, Language::Ru);
         assert_ne!(nid, id);
         assert!(nlines.is_empty());
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn finds_legacy_duel_chat_files() {
-        let dir = env::temp_dir().join(format!("clave-legacy-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("temp dir");
-
-        // legacy-чат с расширением .duel (как после миграции ~/.duel -> ~/.clave)
-        let id = "chat-legacy-9";
-        let legacy_path = dir.join(format!("{}.{}", id, LEGACY_CHAT_FILE_EXTENSION));
-        save_chat_transcript(&legacy_path, id, &["◆ старый".to_string()]).expect("save legacy");
-
-        // путь находится по любому расширению
-        assert_eq!(existing_chat_path(&dir, id), Some(legacy_path));
-        // и восстановление подхватывает legacy-файл
-        let (rid, _, lines) = restore_or_create_chat(&dir, Some(id), Language::Ru);
-        assert_eq!(rid, id);
-        assert_eq!(lines, vec!["◆ старый".to_string()]);
 
         let _ = fs::remove_dir_all(&dir);
     }

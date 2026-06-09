@@ -173,7 +173,6 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
 
 impl ServeRuntimeConfig {
     fn load() -> Self {
-        migrate_legacy_state_if_needed();
         let mut config = load_config(&config_path());
         config.effort_index = normalize_common_effort_index(config.effort_index);
         config.codex_effort_index =
