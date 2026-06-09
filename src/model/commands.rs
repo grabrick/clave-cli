@@ -328,7 +328,7 @@ fn is_known_command_token(token: &str) -> bool {
     COMMANDS
         .iter()
         .any(|command| command.command_token() == token)
-        || matches!(token, "/language" | "/clave" | "/duel" | "/auth" | "/exit")
+        || matches!(token, "/language" | "/clave" | "/auth" | "/exit")
 }
 
 fn normalize_command_rest(command: &str, rest: &str) -> String {
