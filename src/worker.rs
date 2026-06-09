@@ -1409,7 +1409,70 @@ pub(crate) fn engine_path() -> Option<PathBuf> {
         }
     }
 
-    None
+    // Последний фолбэк: движок вшит в бинарник. Установленный через `cargo install`
+    // `clave` живёт один (без скриптов рядом) — распаковываем встроенную копию в
+    // кэш состояния и работаем с ней. В dev-чекауте сюда не доходим: скрипты
+    // находятся в cwd/рядом с exe выше, и правки видны сразу.
+    embedded_engine_path()
+}
+
+/// Скрипты движка, вшитые на этапе компиляции (пути — от src/ к корню репозитория).
+const EMBEDDED_SPEC_CLAVE: &str = include_str!("../spec-clave");
+const EMBEDDED_SPEC_DUEL: &str = include_str!("../spec-duel");
+
+/// Путь к распакованной встроенной копии движка (`spec-clave` рядом с `spec-duel`).
+fn embedded_engine_path() -> Option<PathBuf> {
+    extract_engine_to(&clave_state_dir().join("engine"))
+}
+
+/// Распаковывает вшитые скрипты в `dir` (идемпотентно, по «штампу» содержимого) и
+/// возвращает путь к лаунчеру `spec-clave`. `spec-clave` exec'ает `spec-duel` из
+/// своей же папки, поэтому оба кладём рядом.
+fn extract_engine_to(dir: &Path) -> Option<PathBuf> {
+    let launcher = dir.join(ENGINE_NAME);
+    let engine = dir.join(LEGACY_ENGINE_NAME);
+    let stamp_path = dir.join(".stamp");
+    let want = engine_stamp();
+
+    // Перезаписываем только если содержимое сменилось (обновление бинарника) или
+    // файлов нет — иначе не трогаем диск на каждом запуске плана.
+    let fresh = launcher.exists()
+        && engine.exists()
+        && fs::read_to_string(&stamp_path).is_ok_and(|s| s.trim() == want);
+    if !fresh {
+        fs::create_dir_all(dir).ok()?;
+        write_engine_file(&launcher, EMBEDDED_SPEC_CLAVE)?;
+        write_engine_file(&engine, EMBEDDED_SPEC_DUEL)?;
+        let _ = fs::write(&stamp_path, &want);
+    }
+    existing_path(launcher)
+}
+
+/// Записывает файл движка и на unix ставит исполняемый бит (shebang сам по себе не
+/// делает файл исполняемым). На Windows бит не нужен — `/plan` там идёт через bash
+/// (WSL/Git Bash), а сам файл всё равно читается интерпретатором.
+fn write_engine_file(path: &Path, content: &str) -> Option<()> {
+    fs::write(path, content).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
+    }
+    Some(())
+}
+
+/// Короткий «штамп» содержимого обоих скриптов (FNV-1a, без внешних зависимостей):
+/// меняется при правке движка → распаковка обновит файлы.
+fn engine_stamp() -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in EMBEDDED_SPEC_CLAVE
+        .bytes()
+        .chain(EMBEDDED_SPEC_DUEL.bytes())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 pub(crate) fn existing_path(path: PathBuf) -> Option<PathBuf> {
@@ -1452,6 +1515,39 @@ pub(crate) fn resolve_work_dir(configured: &str, base_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embedded_engine_extracts_runnable_launcher_and_engine() {
+        // Имитируем установленный бинарник без скриптов рядом: распаковка вшитой копии.
+        let dir = env::temp_dir().join("clave-engine-embed-test");
+        let _ = fs::remove_dir_all(&dir);
+
+        let path = extract_engine_to(&dir).expect("движок распаковывается");
+        assert!(
+            path.ends_with(ENGINE_NAME),
+            "вернули путь к лаунчеру: {path:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            EMBEDDED_SPEC_CLAVE,
+            "содержимое spec-clave совпадает с вшитым"
+        );
+
+        // spec-duel лежит рядом — launcher exec'ает его из своей папки.
+        let engine = dir.join(LEGACY_ENGINE_NAME);
+        assert_eq!(fs::read_to_string(&engine).unwrap(), EMBEDDED_SPEC_DUEL);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode();
+            assert!(mode & 0o111 != 0, "spec-clave исполняемый: {mode:o}");
+        }
+
+        // Идемпотентность: повторная распаковка не падает и даёт тот же путь.
+        assert_eq!(extract_engine_to(&dir).expect("повторно"), path);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn claude_text_delta_extracts_only_streamed_answer_text() {
