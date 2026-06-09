@@ -240,6 +240,15 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
                 .flat_map(|line| history_line_render(line, app.lang, width, app.theme, &mut state)),
         );
     } else if app.running {
+        // Живой токен-стрим ответа (claude): растёт по мере прихода, рисуется как
+        // обычный ответ (⏺); лоадер со спиннером/активностью — под ним.
+        if !app.live_answer.is_empty() {
+            let shown = format!("⏺ {}", app.live_answer);
+            let mut state = TranscriptRenderState::default();
+            top.extend(shown.split('\n').flat_map(|line| {
+                history_line_render(line, app.lang, width, app.theme, &mut state)
+            }));
+        }
         top.extend(loader_lines(app, width));
     }
     let top_h = (top.len() as u16).min(room);

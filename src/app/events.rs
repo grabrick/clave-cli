@@ -4,6 +4,8 @@ use super::*;
 pub(crate) enum WorkerEvent {
     Line(String),
     ChatLine(String),
+    /// Инкремент ответа модели (токен-стрим) — показывается вживую до завершения.
+    StreamDelta(String),
     Activity(String),
     Done(i32),
     ChatDone(&'static str, i32, Option<RunUsage>),
@@ -82,12 +84,22 @@ impl App {
 
     /// Переносит готовый reveal в историю (скроллбэк) и запускает отложенную очередь.
     fn commit_reveal(&mut self) {
-        if let Some(reveal) = self.reveal.take() {
-            for line in reveal.text.split('\n') {
+        let text = self
+            .reveal
+            .take()
+            .map(|reveal| reveal.text)
+            .unwrap_or_default();
+        self.commit_answer_text(&text);
+    }
+
+    /// Фиксирует готовый текст ответа в ленте и продолжает: открывает отложенный
+    /// селектор (clave-ask), иначе берёт следующее сообщение из очереди.
+    fn commit_answer_text(&mut self, prose: &str) {
+        if !prose.is_empty() {
+            for line in prose.split('\n') {
                 self.push_system(line.to_string());
             }
         }
-        // После прозы — открываем отложенный селектор, иначе берём очередь.
         if self.ask_prompt_pending.is_some() {
             self.open_pending_ask();
         } else {
@@ -147,6 +159,8 @@ impl App {
                 }
                 // Строки ответа копим — покажем «печатной машинкой» на ChatDone.
                 WorkerEvent::ChatLine(line) => self.reveal_buffer.push(line),
+                // Токен-стрим: дописываем в живой ответ (показывается сразу).
+                WorkerEvent::StreamDelta(delta) => self.live_answer.push_str(&delta),
                 WorkerEvent::Activity(line) => self.push_run_activity(line),
                 WorkerEvent::Done(code) => {
                     self.running = false;
@@ -197,20 +211,20 @@ impl App {
                     }
                     // Ответ получен — возвращать в инпут нечего.
                     self.restore_on_cancel = None;
-                    // Выделяем из ответа запрос выбора (clave-ask): прозу печатаем, блок
-                    // превращаем в селектор. Парсим сырой буфер (find_ask_block срезает
-                    // строку маркера целиком, поэтому префикс «⏺» не мешает).
+                    // Был ли токен-стрим (claude): тогда текст уже показан вживую.
+                    let streamed = !self.live_answer.is_empty();
+                    self.live_answer.clear();
+                    // Выделяем из ответа запрос выбора (clave-ask): прозу — в ленту, блок
+                    // — в селектор. Парсим сырой буфер (find_ask_block срезает строку
+                    // маркера целиком, поэтому префикс «⏺» не мешает).
                     let full = std::mem::take(&mut self.reveal_buffer).join("\n");
                     let (prose, ask) = parse_clave_ask(&full);
                     self.ask_prompt_pending = ask;
-                    if prose.trim().is_empty() {
-                        // Печатать нечего: либо сразу селектор, либо пустой ответ.
-                        if self.ask_prompt_pending.is_some() {
-                            self.open_pending_ask();
-                        } else {
-                            self.process_pending_messages();
-                        }
+                    if streamed || prose.trim().is_empty() {
+                        // Стримили вживую (или печатать нечего) → фиксируем без «печати».
+                        self.commit_answer_text(&prose);
                     } else {
+                        // codex / без стрима → плавная «печатная машинка».
                         self.reveal = Some(Reveal {
                             text: prose,
                             shown: 0,
@@ -252,6 +266,7 @@ impl App {
                     self.cancel_tx = None;
                     self.reveal_buffer.clear();
                     self.reveal = None;
+                    self.live_answer.clear();
                     self.reset_ask();
                     self.status = self.lang.choose("остановлено", "stopped").to_string();
                     // Чат с «отложенной» репликой отменяем начисто: убираем её из живого
@@ -283,6 +298,7 @@ impl App {
                     self.run_token_estimate = None;
                     self.cancel_tx = None;
                     self.restore_on_cancel = None;
+                    self.live_answer.clear();
                     // Реплику фиксируем в ленте — ран дошёл до ошибки, это след попытки.
                     if let Some(turn) = self.live_turn.take() {
                         self.push_system(turn);
@@ -301,6 +317,7 @@ impl App {
                     self.cancel_tx = None;
                     self.reveal_buffer.clear();
                     self.reveal = None;
+                    self.live_answer.clear();
                     self.reset_ask();
                     self.pending_messages.clear();
                     // Не залогинены — реплику не отправили: убираем из живого блока и

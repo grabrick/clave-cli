@@ -337,6 +337,9 @@ pub(crate) fn claude_chat_args<'a>(
         "20",
         "--output-format",
         "stream-json",
+        // Токен-стрим ответа: claude шлёт content_block_delta по мере генерации
+        // (иначе текст приходит одним блоком в конце).
+        "--include-partial-messages",
         "--verbose",
         prompt,
     ]
@@ -1114,15 +1117,31 @@ pub(crate) fn parse_codex_usage(jsonl: &str) -> Option<RunUsage> {
     last
 }
 
-fn codex_command_start(value: &serde_json::Value) -> Option<String> {
+/// Активность из события codex `item.started`: команду показываем детально, прочие
+/// типы (reasoning, agent_message, file_change, …) — обобщённо, чтобы codex-прогон
+/// не выглядел «просто спиннером» (раньше активность была только для команд).
+fn codex_activity(value: &serde_json::Value, lang: Language) -> Option<String> {
     if value.get("type")?.as_str()? != "item.started" {
         return None;
     }
     let item = value.get("item")?;
-    if item.get("type")?.as_str()? != "command_execution" {
-        return None;
+    match item.get("type").and_then(|v| v.as_str()).unwrap_or("") {
+        "command_execution" => item
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(|command| summarize_codex_command(command, lang)),
+        "reasoning" => Some(lang.choose("Рассуждаю…", "Reasoning…").to_string()),
+        "agent_message" | "assistant_message" => {
+            Some(lang.choose("Пишу ответ…", "Writing answer…").to_string())
+        }
+        "file_change" | "patch" => Some(lang.choose("Правлю файлы", "Editing files").to_string()),
+        "mcp_tool_call" | "tool_call" => Some(
+            lang.choose("Вызываю инструмент", "Calling a tool")
+                .to_string(),
+        ),
+        "" => None,
+        other => Some(format!("⚙ {other}")),
     }
-    item.get("command")?.as_str().map(String::from)
 }
 
 fn codex_path_token(command: &str) -> Option<String> {
@@ -1176,10 +1195,8 @@ pub(crate) fn spawn_codex_activity_reader(
         for line in reader.lines().map_while(Result::ok) {
             touch_activity(&last_activity);
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(command) = codex_command_start(&value) {
-                    let _ = tx.send(WorkerEvent::Activity(summarize_codex_command(
-                        &command, lang,
-                    )));
+                if let Some(activity) = codex_activity(&value, lang) {
+                    let _ = tx.send(WorkerEvent::Activity(activity));
                 }
             }
             full.push_str(&line);
@@ -1257,8 +1274,30 @@ fn summarize_claude_tool(item: &serde_json::Value, lang: Language) -> Option<Str
     Some(summary)
 }
 
-/// Потоково читает claude stream-json: эмитит активность (tool_use) в лоадер
-/// и возвращает финальное result-событие (для разбора текста и usage).
+/// Достаёт инкремент текста ответа из события claude (`--include-partial-messages`):
+/// либо сам объект — `content_block_delta`, либо завёрнут в `stream_event.event`.
+/// Берём только `text_delta` (не thinking/signature).
+fn claude_text_delta(value: &serde_json::Value) -> Option<String> {
+    let block = match value.get("type").and_then(|v| v.as_str()) {
+        Some("stream_event") => value.get("event")?,
+        _ => value,
+    };
+    if block.get("type").and_then(|v| v.as_str()) != Some("content_block_delta") {
+        return None;
+    }
+    let delta = block.get("delta")?;
+    if delta.get("type").and_then(|v| v.as_str()) != Some("text_delta") {
+        return None;
+    }
+    delta
+        .get("text")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+/// Потоково читает claude stream-json: токены ответа эмитит как StreamDelta (живой
+/// вывод), активность tool_use — в лоадер, и возвращает финальное result-событие.
 pub(crate) fn spawn_claude_activity_reader(
     reader: impl Read + Send + 'static,
     tx: Sender<WorkerEvent>,
@@ -1273,6 +1312,10 @@ pub(crate) fn spawn_claude_activity_reader(
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue;
             };
+            if let Some(delta) = claude_text_delta(&value) {
+                let _ = tx.send(WorkerEvent::StreamDelta(delta));
+                continue;
+            }
             match value.get("type").and_then(|v| v.as_str()) {
                 Some("assistant") => {
                     if let Some(content) = value
@@ -1409,6 +1452,49 @@ pub(crate) fn resolve_work_dir(configured: &str, base_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_text_delta_extracts_only_streamed_answer_text() {
+        // Текст-дельта, завёрнутая в stream_event → берём.
+        let wrapped = serde_json::json!({"type":"stream_event","event":{
+            "type":"content_block_delta","index":0,
+            "delta":{"type":"text_delta","text":"привет"}}});
+        assert_eq!(claude_text_delta(&wrapped).as_deref(), Some("привет"));
+        // Размышления (thinking) и финальный result — НЕ стримим как ответ.
+        let thinking = serde_json::json!({"type":"stream_event","event":{
+            "type":"content_block_delta","delta":{"type":"thinking_delta","text":"гм"}}});
+        assert_eq!(claude_text_delta(&thinking), None);
+        assert_eq!(
+            claude_text_delta(&serde_json::json!({"type":"result","result":"x"})),
+            None
+        );
+    }
+
+    #[test]
+    fn codex_activity_covers_item_types() {
+        let item = |t: &str| serde_json::json!({"type":"item.started","item":{"type":t}});
+        // Не item.started → нет активности.
+        assert!(
+            codex_activity(&serde_json::json!({"type":"turn.started"}), Language::Ru).is_none()
+        );
+        assert_eq!(
+            codex_activity(&item("reasoning"), Language::Ru).as_deref(),
+            Some("Рассуждаю…")
+        );
+        assert_eq!(
+            codex_activity(&item("agent_message"), Language::Ru).as_deref(),
+            Some("Пишу ответ…")
+        );
+        // Команда — детальная сводка (не дефолтная заглушка).
+        let cmd = serde_json::json!({"type":"item.started",
+            "item":{"type":"command_execution","command":"ls -la"}});
+        assert!(codex_activity(&cmd, Language::Ru).is_some());
+        // Неизвестный тип — обобщённо, но не молчим (codex не должен быть «спиннером»).
+        assert_eq!(
+            codex_activity(&item("totally_new"), Language::Ru).as_deref(),
+            Some("⚙ totally_new")
+        );
+    }
 
     #[test]
     fn resolves_dot_to_launch_directory() {
