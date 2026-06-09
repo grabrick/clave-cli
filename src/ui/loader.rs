@@ -14,9 +14,27 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
     } else {
         app.run_label.clone()
     };
-    // Без оценочного «≈ N tokens» — это фейковая инфа до реального расхода.
-    // Реальный расход (usage · $) показывается в футере по завершении прогона.
-    let detail = format!("({} · {})", format_elapsed(elapsed), label);
+    // Живая оценка расхода: реально отправленный промт (run_token_estimate) плюс
+    // уже принятый текст ответа (live_answer растёт по токенам у claude). Цифра
+    // приблизительная (≈, токенизация по символам), но опирается на реальный
+    // текст и растёт по факту. Точный usage·$ — в футере по завершении.
+    let out_tokens = if app.live_answer.is_empty() {
+        0
+    } else {
+        estimate_tokens(&app.live_answer)
+    };
+    let tokens = app.run_token_estimate.unwrap_or(0) + out_tokens;
+    let detail = if tokens > 0 {
+        format!(
+            "({} · {} · ≈ {} {})",
+            format_elapsed(elapsed),
+            label,
+            format_token_count(tokens),
+            app.lang.choose("токенов", "tokens"),
+        )
+    } else {
+        format!("({} · {})", format_elapsed(elapsed), label)
+    };
 
     let mut spans =
         theme_shimmer_text_spans(&format!("✳ {}… ", phrase), app.theme, current_effort_tick());
@@ -86,6 +104,33 @@ pub(crate) fn theme_shimmer_color(theme: Theme, index: usize, tick: u64) -> Colo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn line_text(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    #[test]
+    fn loader_shows_token_estimate_when_known() {
+        let mut app = App::new();
+        app.run_started_at = Some(Instant::now());
+        app.run_label = "Claude".to_string();
+        app.run_token_estimate = Some(1200);
+        // Поток ответа пуст — показываем оценку промта.
+        let text = line_text(&loader_line(&app));
+        assert!(text.contains('≈'), "есть пометка оценки: {text}");
+        assert!(text.contains("1.2k"), "форматированный счётчик: {text}");
+        assert!(text.contains("токенов"), "подпись по-русски: {text}");
+
+        // Без оценки — старый вид без счётчика.
+        app.run_token_estimate = None;
+        app.live_answer.clear();
+        let text = line_text(&loader_line(&app));
+        assert!(!text.contains('≈'), "нет токенов — нет пометки: {text}");
+    }
 
     #[test]
     fn loader_shimmer_uses_current_theme_palette() {
