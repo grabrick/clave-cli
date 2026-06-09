@@ -4,3 +4,8 @@ target/
 .ai-runs/
 .DS_Store
 
+# Локальные инструменты и заметки процесса — не в репозиторий.
+CLAUDE.md
+.claude/
+docs/superpowers/
+
