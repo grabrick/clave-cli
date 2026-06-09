@@ -242,8 +242,11 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
     } else if app.running {
         // Живой токен-стрим ответа (claude): растёт по мере прихода, рисуется как
         // обычный ответ (⏺); лоадер со спиннером/активностью — под ним.
-        if !app.live_answer.is_empty() {
-            let shown = format!("⏺ {}", app.live_answer);
+        // Прячем тело блока ```clave-ask` ещё в стриме: JSON выбора не должен
+        // мелькать в ленте до того, как откроется панель (на ChatDone).
+        let visible = live_answer_visible(&app.live_answer);
+        if !visible.is_empty() {
+            let shown = format!("⏺ {visible}");
             let mut state = TranscriptRenderState::default();
             top.extend(shown.split('\n').flat_map(|line| {
                 history_line_render(line, app.lang, width, app.theme, &mut state)

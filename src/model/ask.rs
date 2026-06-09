@@ -21,10 +21,36 @@ pub(crate) struct AskPrompt {
     pub(crate) questions: Vec<AskQuestion>,
 }
 
+/// Открывающее ограждение блока выбора. Один источник истины для парсера и для
+/// живого стрима (чтобы прятать JSON одинаково).
+pub(crate) const ASK_FENCE: &str = "```clave-ask";
+
 struct AskBlock {
     /// Смещение начала строки с открывающим маркером (чтобы вырезать блок целиком).
     start: usize,
     json: String,
+}
+
+/// Видимая часть стримящегося ответа: всё до блока ```clave-ask`.
+///
+/// Пока ответ печатается по токенам, тело блока (JSON выбора) не должно мелькать
+/// в ленте — панель откроется только на `ChatDone`. Режем по началу строки с
+/// маркером. Любая строка, начинающаяся с ``` , и так не отрисовывается (это
+/// ограждение), а тело JSON идёт уже ПОСЛЕ полного маркера — поэтому обрезка по
+/// маркеру прячет JSON и при этом никогда не съедает обычные блоки кода.
+pub(crate) fn live_answer_visible(text: &str) -> &str {
+    // Маркер — настоящее ограждение только в начале строки. Идём по началам строк
+    // (после каждого '\n' — ASCII, граница символа сохраняется).
+    let mut from = 0;
+    loop {
+        if text[from..].starts_with(ASK_FENCE) {
+            return text[..from].trim_end();
+        }
+        match text[from..].find('\n') {
+            Some(rel) => from += rel + 1,
+            None => return text,
+        }
+    }
 }
 
 /// Находит первый блок ```clave-ask … ``` и парсит его JSON.
@@ -46,10 +72,9 @@ pub(crate) fn parse_clave_ask(text: &str) -> (String, Option<AskPrompt>) {
 }
 
 fn find_ask_block(text: &str) -> Option<AskBlock> {
-    const MARKER: &str = "```clave-ask";
-    let open = text.find(MARKER)?;
+    let open = text.find(ASK_FENCE)?;
     let line_start = text[..open].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let after_marker = open + MARKER.len();
+    let after_marker = open + ASK_FENCE.len();
     // тело начинается со следующей строки после маркера
     let body_start = text[after_marker..]
         .find('\n')
@@ -248,6 +273,27 @@ mod tests {
         let (prose, prompt) = parse_clave_ask(text);
         assert!(prompt.is_none());
         assert_eq!(prose, text);
+    }
+
+    #[test]
+    fn live_stream_hides_ask_block_keeps_prose_and_code() {
+        // Проза до блока — видна; тело блока (JSON) — спрятано целиком.
+        let streamed = "Сейчас уточню.\n```clave-ask\n{\"question\":\"q\",\"options\":[";
+        assert_eq!(live_answer_visible(streamed), "Сейчас уточню.");
+
+        // Блок в самом начале → видимого текста нет (рисуется только лоадер).
+        assert_eq!(live_answer_visible("```clave-ask\n{\"que"), "");
+
+        // Обычный блок кода не трогаем — режем только clave-ask.
+        let code = "Вот пример:\n```rust\nfn main() {}\n```";
+        assert_eq!(live_answer_visible(code), code);
+
+        // Без блока текст возвращается как есть.
+        assert_eq!(live_answer_visible("просто ответ"), "просто ответ");
+
+        // Маркер на середине строки (не с начала) — это не ограждение, не режем.
+        let inline = "см. ```clave-ask внутри строки";
+        assert_eq!(live_answer_visible(inline), inline);
     }
 
     #[test]
