@@ -30,6 +30,8 @@
 - `claude` CLI — установлен и залогинен
 - `codex` CLI — установлен и залогинен
 
+**Из исходников (полный набор — TUI + движок планирования):**
+
 ```bash
 git clone https://github.com/grabrick/clave-cli-v0
 cd clave-cli-v0
@@ -38,6 +40,19 @@ cargo build --release
 ```
 
 `./clave` можно скопировать или симлинкнуть в любой каталог из `PATH`.
+
+**Через `cargo install` (только бинарник TUI):**
+
+```bash
+cargo install --git https://github.com/grabrick/clave-cli-v0   # ставит `clave` в ~/.cargo/bin
+```
+
+Прямой чат заработает сразу. Для `/plan` нужен bash-движок `spec-clave`/`spec-duel`
+(он не входит в бинарник): держи рядом репозиторий или укажи путь —
+`export CLAVE_ENGINE=/путь/к/spec-duel`.
+
+> Готовые бинарники в GitHub Releases (mac/linux) и brew-формула — в планах
+> (требуют CI, который пока не настроен).
 
 ## Запуск
 

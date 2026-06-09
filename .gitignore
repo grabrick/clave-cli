@@ -1,4 +1,6 @@
 target/
+# Артефакты ранов движка: дефолтный OUT_DIR — .clave/ (legacy — .ai-runs/).
+.clave/
 .ai-runs/
 .DS_Store
 
