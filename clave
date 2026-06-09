@@ -16,10 +16,8 @@ RELEASE_BIN="$SCRIPT_DIR/target/release/clave"
 DEBUG_BIN="$SCRIPT_DIR/target/debug/clave"
 ENGINE="$SCRIPT_DIR/spec-clave"
 
-export CLAVE_ENGINE="${CLAVE_ENGINE:-${DUEL_ENGINE:-$ENGINE}}"
-export DUEL_ENGINE="${DUEL_ENGINE:-$CLAVE_ENGINE}"
-export CLAVE_LAUNCH_CWD="${CLAVE_LAUNCH_CWD:-${DUEL_LAUNCH_CWD:-$LAUNCH_CWD}}"
-export DUEL_LAUNCH_CWD="${DUEL_LAUNCH_CWD:-$CLAVE_LAUNCH_CWD}"
+export CLAVE_ENGINE="${CLAVE_ENGINE:-$ENGINE}"
+export CLAVE_LAUNCH_CWD="${CLAVE_LAUNCH_CWD:-$LAUNCH_CWD}"
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   printf '%s\n' 'clave'

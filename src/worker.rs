@@ -1383,12 +1383,6 @@ pub(crate) fn engine_path() -> Option<PathBuf> {
         }
     }
 
-    if let Ok(path) = env::var("DUEL_ENGINE") {
-        if let Some(path) = existing_path(PathBuf::from(path)) {
-            return Some(path);
-        }
-    }
-
     if let Ok(current_dir) = env::current_dir() {
         if let Some(path) = existing_path(current_dir.join(ENGINE_NAME)) {
             return Some(path);
@@ -1469,7 +1463,6 @@ pub(crate) fn existing_path(path: PathBuf) -> Option<PathBuf> {
 
 pub(crate) fn launch_work_dir() -> PathBuf {
     env::var("CLAVE_LAUNCH_CWD")
-        .or_else(|_| env::var("DUEL_LAUNCH_CWD"))
         .ok()
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
