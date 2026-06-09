@@ -107,10 +107,16 @@ fn draw_question_rows(
     let offset = command_palette_scroll_offset(answer.cursor, capacity, total);
     for idx in offset..(offset + capacity).min(total) {
         let selected = idx == answer.cursor;
-        let marker = if selected { "› " } else { "  " };
         if idx < question.options.len() {
             let opt = &question.options[idx];
-            let mut spans = vec![Span::styled(marker, Style::default().fg(color))];
+            let mut spans = vec![
+                Span::styled(row_marker(selected), Style::default().fg(color)),
+                // Нумерация пунктов — приглушённая, ярче на выбранном.
+                Span::styled(
+                    format!("{}. ", idx + 1),
+                    Style::default().fg(if selected { color } else { MUTED }),
+                ),
+            ];
             if question.multi {
                 let checked = answer.checked[idx];
                 spans.push(Span::styled(
@@ -140,8 +146,26 @@ fn draw_question_rows(
             }
             lines.push(Line::from(spans));
         } else {
-            lines.push(custom_field_line(answer, app, color, iw, selected));
+            // «Свой ответ» — следующий по счёту номер после вариантов.
+            lines.push(custom_field_line(
+                answer,
+                app,
+                color,
+                iw,
+                selected,
+                question.options.len() + 1,
+            ));
         }
+    }
+}
+
+/// Отступ строки-пункта: стрелка на выбранном, пробелы иначе. Один пробел слева
+/// для воздуха, чтобы пункты были чуть отбиты от рамки и текста вопроса.
+fn row_marker(selected: bool) -> &'static str {
+    if selected {
+        " › "
+    } else {
+        "   "
     }
 }
 
@@ -151,12 +175,14 @@ fn custom_field_line(
     color: Color,
     iw: usize,
     selected: bool,
+    number: usize,
 ) -> Line<'static> {
     let label = app.lang.choose("Свой ответ: ", "Custom: ");
     let mut spans = vec![
+        Span::styled(row_marker(selected), Style::default().fg(color)),
         Span::styled(
-            if selected { "› " } else { "  " },
-            Style::default().fg(color),
+            format!("{number}. "),
+            Style::default().fg(if selected { color } else { MUTED }),
         ),
         Span::styled(
             label,
@@ -210,7 +236,7 @@ fn draw_confirm_rows(
     let questions = state.prompt.questions.len();
     for idx in offset..(offset + capacity).min(total) {
         let selected = idx == state.confirm_cursor;
-        let marker = if selected { "› " } else { "  " };
+        let marker = row_marker(selected);
         if idx < questions {
             let chosen = state.chosen(idx);
             let answer = if chosen.is_empty() {
