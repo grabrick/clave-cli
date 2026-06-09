@@ -73,11 +73,11 @@ impl App {
                 | "/duel"
                 | "/advisor"
                 | "/btw"
-                | "/brainstorming"
-                | "/writing-plans"
-                | "/finishing-a-development-branch"
-                | "/subagent-driven-development"
-                | "/using-git-worktrees"
+                | "/brainstorm"
+                | "/blueprint"
+                | "/finish-branch"
+                | "/split-work"
+                | "/worktrees"
                 | "/autofix-pr"
                 | "/new"
                 | "/resume"
@@ -166,35 +166,35 @@ impl App {
                     )),
                 }
             }
-            "/brainstorming" => self.run_planning_preset(
+            "/brainstorm" => self.run_planning_preset(
                 "Брейншторминг перед реализацией",
                 "Brainstorm before implementation",
                 &rest,
                 "Разбери текущий контекст, предложи варианты решения, риски, быстрые проверки и лучший следующий шаг.",
                 "Use the current context, propose solution options, risks, quick checks, and the best next step.",
             ),
-            "/writing-plans" => self.run_planning_preset(
+            "/blueprint" => self.run_planning_preset(
                 "План разработки",
                 "Development plan",
                 &rest,
                 "Собери из текущего контекста пошаговый план реализации с проверками и порядком изменений.",
                 "Turn the current context into a step-by-step implementation plan with checks and change order.",
             ),
-            "/finishing-a-development-branch" => self.run_planning_preset(
+            "/finish-branch" => self.run_planning_preset(
                 "Завершение ветки разработки",
                 "Finish development branch",
                 &rest,
                 "Проверь, что нужно доделать перед завершением ветки: тесты, регрессии, документация, пуш.",
                 "Check what is needed before finishing the branch: tests, regressions, docs, and push readiness.",
             ),
-            "/subagent-driven-development" => self.run_planning_preset(
+            "/split-work" => self.run_planning_preset(
                 "Разделение работы между агентами",
-                "Subagent-driven development",
+                "Split work across agents",
                 &rest,
                 "Разбей текущую задачу на независимые рабочие потоки для нескольких ИИ-агентов.",
                 "Split the current task into independent workstreams for multiple AI agents.",
             ),
-            "/using-git-worktrees" => self.run_planning_preset(
+            "/worktrees" => self.run_planning_preset(
                 "План работы через git worktrees",
                 "Git worktree workflow plan",
                 &rest,
@@ -493,11 +493,11 @@ impl App {
     pub(crate) fn command_has_handler(command: &str) -> bool {
         matches!(
             command,
-            "/brainstorming"
-                | "/writing-plans"
-                | "/finishing-a-development-branch"
-                | "/subagent-driven-development"
-                | "/using-git-worktrees"
+            "/brainstorm"
+                | "/blueprint"
+                | "/finish-branch"
+                | "/split-work"
+                | "/worktrees"
                 | "/add-dir"
                 | "/advisor"
                 | "/agents"
