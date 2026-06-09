@@ -84,7 +84,7 @@ def main() -> int:
     for _ in range(5):
         send("/")
         pump(0.35)
-        opened.append(visible("/brainstorming") or visible("/help") or visible("/btw"))
+        opened.append(visible("/brainstorm") or visible("/help") or visible("/btw"))
         footer_hidden_on_palette.append(not footer_shown())  # футер прячется под палитрой
         send("\x7f")  # стереть '/'
         pump(0.35)

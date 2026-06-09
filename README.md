@@ -132,7 +132,7 @@ MCP-серверов из глобального конфига.
 `.здфт` → `/plan`). Основные группы:
 
 - **Чат / роли:** `/chat-model claude|codex`, `/mode codex-only|claude-codex|codex-claude|claude-only`, `/roles <executor> <reviewer>`
-- **Планирование:** `/plan <задача>` + пресеты `/brainstorming`, `/writing-plans`, `/autofix-pr`, …
+- **Планирование:** `/plan <задача>` + пресеты `/brainstorm`, `/blueprint`, `/autofix-pr`, …
 - **Чаты:** `/new`, `/chats`, `/resume <id>`, `/name`, `/rename`, `/clear history`
 - **Настройки:** `/settings`, `/setup`, `/effort`, `/theme purple|cyan|rose|amber|mono`, `/lang ru|en`, `/add-dir <dir>`
 - **Прочее:** `/cost`, `/search`, `/retry`, `/export`, `/advisor <вопрос>`, `/btw <вопрос>`, `/help`
