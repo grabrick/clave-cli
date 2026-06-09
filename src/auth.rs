@@ -40,7 +40,10 @@ pub(crate) fn provider_authenticated(provider: &str) -> bool {
 }
 
 pub(crate) fn codex_auth_probe() -> AuthProbe {
-    match Command::new("codex").args(["login", "status"]).output() {
+    match Command::new(codex_binary())
+        .args(["login", "status"])
+        .output()
+    {
         Ok(output) => {
             let text = command_output_text(&output.stdout, &output.stderr);
             AuthProbe {
@@ -59,7 +62,7 @@ pub(crate) fn codex_auth_probe() -> AuthProbe {
 }
 
 pub(crate) fn claude_auth_probe() -> AuthProbe {
-    match Command::new("claude")
+    match Command::new(claude_binary())
         .args(["auth", "status", "--text"])
         .output()
     {

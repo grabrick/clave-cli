@@ -343,6 +343,42 @@ pub(crate) fn claude_chat_args<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Бинарь claude: env-override (моки/тесты) → дефолт `claude`. Один источник
+/// для запуска И для auth-пробы, иначе проба игнорит override (см. провайдер-пробы).
+pub(crate) fn claude_binary() -> String {
+    env::var("CLAVE_CLAUDE")
+        .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
+        .unwrap_or_else(|_| "claude".to_string())
+}
+
+/// Бинарь codex: env-override (моки/тесты) → дефолт `codex`.
+pub(crate) fn codex_binary() -> String {
+    env::var("CLAVE_CODEX")
+        .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
+        .unwrap_or_else(|_| "codex".to_string())
+}
+
+/// Лимит простоя: нет вывода дольше него → провайдер считается зависшим и
+/// убивается (иначе застрявший CLI висит до ручного Ctrl+C). Это «тишина», а не
+/// общий таймаут — нормальный агентский прогон постоянно стримит события, поэтому
+/// долгие, но активные раны не страдают. Переопределяется `CLAVE_IDLE_TIMEOUT_SECS`.
+pub(crate) fn idle_timeout() -> Duration {
+    let secs = env::var("CLAVE_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&s| s > 0)
+        .unwrap_or(180);
+    Duration::from_secs(secs)
+}
+
+/// Отметить «была активность сейчас» (ридеры зовут на каждой строке вывода).
+fn touch_activity(last: &Arc<Mutex<Instant>>) {
+    if let Ok(mut guard) = last.lock() {
+        *guard = Instant::now();
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // самостоятельный раннер провайдера; группировать незачем
 pub(crate) fn run_chat_provider(
     provider: &'static str,
     effort: &str,
@@ -362,17 +398,11 @@ pub(crate) fn run_chat_provider(
             .unwrap_or(0)
     ));
     let mut command = if provider == "claude" {
-        let program = env::var("CLAVE_CLAUDE")
-            .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
-            .unwrap_or_else(|_| "claude".to_string());
-        let mut command = Command::new(program);
+        let mut command = Command::new(claude_binary());
         command.args(claude_chat_args(effort, access, prompt));
         command
     } else {
-        let program = env::var("CLAVE_CODEX")
-            .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
-            .unwrap_or_else(|_| "codex".to_string());
-        let mut command = Command::new(program);
+        let mut command = Command::new(codex_binary());
         let codex_out = codex_out_file.to_string_lossy().into_owned();
         command.args([
             "exec",
@@ -401,11 +431,12 @@ pub(crate) fn run_chat_provider(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    let last_activity = Arc::new(Mutex::new(Instant::now()));
     let stdout_handle = child.stdout.take().map(|out| {
         if provider == "claude" {
-            spawn_claude_activity_reader(out, tx.clone(), lang)
+            spawn_claude_activity_reader(out, tx.clone(), lang, last_activity.clone())
         } else {
-            spawn_codex_activity_reader(out, tx.clone(), lang)
+            spawn_codex_activity_reader(out, tx.clone(), lang, last_activity.clone())
         }
     });
     let stderr_handle = child.stderr.take().map(spawn_capture_reader);
@@ -448,7 +479,31 @@ pub(crate) fn run_chat_provider(
                 }
                 return Ok(ChatRunResult::Completed(code, text, stderr, usage));
             }
-            None => thread::sleep(Duration::from_millis(80)),
+            None => {
+                if last_activity
+                    .lock()
+                    .map(|t| t.elapsed())
+                    .unwrap_or_default()
+                    >= idle_timeout()
+                {
+                    // Убиваем зависший CLI. Ридеры НЕ join-им: их read мог застрять на
+                    // pipe, который держит осиротевший под-процесс (kill бьёт только сам
+                    // CLI). Handle'ы роняем — нити завершатся сами по EOF.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    drop(stdout_handle);
+                    drop(stderr_handle);
+                    let _ = fs::remove_file(&codex_out_file);
+                    let secs = idle_timeout().as_secs();
+                    let msg = format!(
+                        "{} {secs}{}",
+                        lang.choose("Провайдер не отвечал", "Provider produced no output for"),
+                        lang.choose(" c — остановлен по таймауту.", "s — stopped (timeout)."),
+                    );
+                    return Ok(ChatRunResult::Completed(124, String::new(), msg, None));
+                }
+                thread::sleep(Duration::from_millis(80));
+            }
         }
     }
 }
@@ -518,17 +573,11 @@ pub(crate) fn run_provider_once(
             .unwrap_or(0)
     ));
     let mut command = if provider == "claude" {
-        let program = env::var("CLAVE_CLAUDE")
-            .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
-            .unwrap_or_else(|_| "claude".to_string());
-        let mut command = Command::new(program);
+        let mut command = Command::new(claude_binary());
         command.args(claude_chat_args(effort, access, prompt));
         command
     } else {
-        let program = env::var("CLAVE_CODEX")
-            .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
-            .unwrap_or_else(|_| "codex".to_string());
-        let mut command = Command::new(program);
+        let mut command = Command::new(codex_binary());
         let codex_out = codex_out_file.to_string_lossy().into_owned();
         command.args([
             "exec",
@@ -557,11 +606,12 @@ pub(crate) fn run_provider_once(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    let last_activity = Arc::new(Mutex::new(Instant::now()));
     let stdout_handle = child.stdout.take().map(|out| {
         if provider == "claude" {
-            spawn_claude_activity_reader(out, tx.clone(), lang)
+            spawn_claude_activity_reader(out, tx.clone(), lang, last_activity.clone())
         } else {
-            spawn_codex_activity_reader(out, tx.clone(), lang)
+            spawn_codex_activity_reader(out, tx.clone(), lang, last_activity.clone())
         }
     });
     let stderr_handle = child.stderr.take().map(spawn_capture_reader);
@@ -603,7 +653,34 @@ pub(crate) fn run_provider_once(
                 }
                 return Ok(Some(TandemStep { text, code, usage }));
             }
-            None => thread::sleep(Duration::from_millis(80)),
+            None => {
+                if last_activity
+                    .lock()
+                    .map(|t| t.elapsed())
+                    .unwrap_or_default()
+                    >= idle_timeout()
+                {
+                    // Зависший CLI: убиваем и НЕ join-им ридеры (read мог застрять на
+                    // pipe осиротевшего под-процесса). Handle'ы роняем.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    drop(stdout_handle);
+                    drop(stderr_handle);
+                    let _ = fs::remove_file(&codex_out_file);
+                    let secs = idle_timeout().as_secs();
+                    let text = format!(
+                        "{} {secs}{}",
+                        lang.choose("Провайдер не отвечал", "Provider produced no output for"),
+                        lang.choose(" c — остановлен по таймауту.", "s — stopped (timeout)."),
+                    );
+                    return Ok(Some(TandemStep {
+                        text,
+                        code: 124,
+                        usage: None,
+                    }));
+                }
+                thread::sleep(Duration::from_millis(80));
+            }
         }
     }
 }
@@ -1091,11 +1168,13 @@ pub(crate) fn spawn_codex_activity_reader(
     reader: impl Read + Send + 'static,
     tx: Sender<WorkerEvent>,
     lang: Language,
+    last_activity: Arc<Mutex<Instant>>,
 ) -> thread::JoinHandle<String> {
     thread::spawn(move || {
         let reader = BufReader::new(reader);
         let mut full = String::new();
         for line in reader.lines().map_while(Result::ok) {
+            touch_activity(&last_activity);
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
                 if let Some(command) = codex_command_start(&value) {
                     let _ = tx.send(WorkerEvent::Activity(summarize_codex_command(
@@ -1184,11 +1263,13 @@ pub(crate) fn spawn_claude_activity_reader(
     reader: impl Read + Send + 'static,
     tx: Sender<WorkerEvent>,
     lang: Language,
+    last_activity: Arc<Mutex<Instant>>,
 ) -> thread::JoinHandle<String> {
     thread::spawn(move || {
         let reader = BufReader::new(reader);
         let mut result_line = String::new();
         for line in reader.lines().map_while(Result::ok) {
+            touch_activity(&last_activity);
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue;
             };
