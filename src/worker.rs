@@ -1393,17 +1393,11 @@ pub(crate) fn engine_path() -> Option<PathBuf> {
         if let Some(path) = existing_path(current_dir.join(ENGINE_NAME)) {
             return Some(path);
         }
-        if let Some(path) = existing_path(current_dir.join(LEGACY_ENGINE_NAME)) {
-            return Some(path);
-        }
     }
 
     if let Ok(exe) = env::current_exe() {
         for dir in exe.ancestors().skip(1).take(4) {
             if let Some(path) = existing_path(dir.join(ENGINE_NAME)) {
-                return Some(path);
-            }
-            if let Some(path) = existing_path(dir.join(LEGACY_ENGINE_NAME)) {
                 return Some(path);
             }
         }
@@ -1416,36 +1410,30 @@ pub(crate) fn engine_path() -> Option<PathBuf> {
     embedded_engine_path()
 }
 
-/// Скрипты движка, вшитые на этапе компиляции (пути — от src/ к корню репозитория).
+/// Движок, вшитый на этапе компиляции (путь — от src/ к корню репозитория).
 const EMBEDDED_SPEC_CLAVE: &str = include_str!("../spec-clave");
-const EMBEDDED_SPEC_DUEL: &str = include_str!("../spec-duel");
 
-/// Путь к распакованной встроенной копии движка (`spec-clave` рядом с `spec-duel`).
+/// Путь к распакованной встроенной копии движка (`spec-clave`).
 fn embedded_engine_path() -> Option<PathBuf> {
     extract_engine_to(&clave_state_dir().join("engine"))
 }
 
-/// Распаковывает вшитые скрипты в `dir` (идемпотентно, по «штампу» содержимого) и
-/// возвращает путь к лаунчеру `spec-clave`. `spec-clave` exec'ает `spec-duel` из
-/// своей же папки, поэтому оба кладём рядом.
+/// Распаковывает вшитый движок в `dir` (идемпотентно, по «штампу» содержимого) и
+/// возвращает путь к `spec-clave`.
 fn extract_engine_to(dir: &Path) -> Option<PathBuf> {
-    let launcher = dir.join(ENGINE_NAME);
-    let engine = dir.join(LEGACY_ENGINE_NAME);
+    let engine = dir.join(ENGINE_NAME);
     let stamp_path = dir.join(".stamp");
     let want = engine_stamp();
 
     // Перезаписываем только если содержимое сменилось (обновление бинарника) или
-    // файлов нет — иначе не трогаем диск на каждом запуске плана.
-    let fresh = launcher.exists()
-        && engine.exists()
-        && fs::read_to_string(&stamp_path).is_ok_and(|s| s.trim() == want);
+    // файла нет — иначе не трогаем диск на каждом запуске плана.
+    let fresh = engine.exists() && fs::read_to_string(&stamp_path).is_ok_and(|s| s.trim() == want);
     if !fresh {
         fs::create_dir_all(dir).ok()?;
-        write_engine_file(&launcher, EMBEDDED_SPEC_CLAVE)?;
-        write_engine_file(&engine, EMBEDDED_SPEC_DUEL)?;
+        write_engine_file(&engine, EMBEDDED_SPEC_CLAVE)?;
         let _ = fs::write(&stamp_path, &want);
     }
-    existing_path(launcher)
+    existing_path(engine)
 }
 
 /// Записывает файл движка и на unix ставит исполняемый бит (shebang сам по себе не
@@ -1461,14 +1449,11 @@ fn write_engine_file(path: &Path, content: &str) -> Option<()> {
     Some(())
 }
 
-/// Короткий «штамп» содержимого обоих скриптов (FNV-1a, без внешних зависимостей):
-/// меняется при правке движка → распаковка обновит файлы.
+/// Короткий «штамп» содержимого движка (FNV-1a, без внешних зависимостей):
+/// меняется при правке движка → распаковка обновит файл.
 fn engine_stamp() -> String {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in EMBEDDED_SPEC_CLAVE
-        .bytes()
-        .chain(EMBEDDED_SPEC_DUEL.bytes())
-    {
+    for byte in EMBEDDED_SPEC_CLAVE.bytes() {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -1517,7 +1502,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_engine_extracts_runnable_launcher_and_engine() {
+    fn embedded_engine_extracts_runnable_script() {
         // Имитируем установленный бинарник без скриптов рядом: распаковка вшитой копии.
         let dir = env::temp_dir().join("clave-engine-embed-test");
         let _ = fs::remove_dir_all(&dir);
@@ -1525,17 +1510,13 @@ mod tests {
         let path = extract_engine_to(&dir).expect("движок распаковывается");
         assert!(
             path.ends_with(ENGINE_NAME),
-            "вернули путь к лаунчеру: {path:?}"
+            "вернули путь к движку: {path:?}"
         );
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
             EMBEDDED_SPEC_CLAVE,
             "содержимое spec-clave совпадает с вшитым"
         );
-
-        // spec-duel лежит рядом — launcher exec'ает его из своей папки.
-        let engine = dir.join(LEGACY_ENGINE_NAME);
-        assert_eq!(fs::read_to_string(&engine).unwrap(), EMBEDDED_SPEC_DUEL);
 
         #[cfg(unix)]
         {

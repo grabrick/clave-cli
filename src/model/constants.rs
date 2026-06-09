@@ -7,7 +7,6 @@ pub(crate) const COMMON_EFFORTS: &[&str] = &["low", "medium", "high"];
 pub(crate) const APP_NAME: &str = "Clave";
 pub(crate) const APP_COMMAND: &str = "clave";
 pub(crate) const ENGINE_NAME: &str = "spec-clave";
-pub(crate) const LEGACY_ENGINE_NAME: &str = "spec-duel";
 pub(crate) const DEFAULT_ARTIFACT_DIR: &str = ".clave";
 pub(crate) const STATE_DIR_NAME: &str = ".clave";
 pub(crate) const LEGACY_STATE_DIR_NAME: &str = ".duel";

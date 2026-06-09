@@ -70,7 +70,6 @@ impl App {
             command,
             "/plan"
                 | "/clave"
-                | "/duel"
                 | "/advisor"
                 | "/btw"
                 | "/brainstorm"
@@ -227,7 +226,7 @@ impl App {
                     "Usage: /color purple|cyan|rose|amber|mono",
                 )),
             },
-            "/plan" | "/clave" | "/duel" => {
+            "/plan" | "/clave" => {
                 if rest.trim().is_empty() {
                     self.push_system(
                         self.lang

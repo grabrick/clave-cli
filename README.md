@@ -59,8 +59,8 @@ cargo build --release
 cargo install --git https://github.com/grabrick/clave-cli-v0   # ставит `clave` в ~/.cargo/bin
 ```
 
-Движок планирования `spec-clave`/`spec-duel` **вшит в бинарник**: при первом `/plan`
-он распаковывается в `~/.duel/engine/` (переопределяется `CLAVE_HOME`/`DUEL_HOME`),
+Движок планирования `spec-clave` **вшит в бинарник**: при первом `/plan`
+он распаковывается в `~/.clave/engine/` (переопределяется `CLAVE_HOME`),
 так что и прямой чат, и планирование работают «из коробки», без репозитория рядом.
 Если нужен свой движок — переопредели путь: `export CLAVE_ENGINE=/путь/к/spec-clave`.
 

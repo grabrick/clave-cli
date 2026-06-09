@@ -15,9 +15,6 @@ LAUNCH_CWD="$(pwd -P)"
 RELEASE_BIN="$SCRIPT_DIR/target/release/clave"
 DEBUG_BIN="$SCRIPT_DIR/target/debug/clave"
 ENGINE="$SCRIPT_DIR/spec-clave"
-if [[ ! -x "$ENGINE" ]]; then
-  ENGINE="$SCRIPT_DIR/spec-duel"
-fi
 
 export CLAVE_ENGINE="${CLAVE_ENGINE:-${DUEL_ENGINE:-$ENGINE}}"
 export DUEL_ENGINE="${DUEL_ENGINE:-$CLAVE_ENGINE}"
