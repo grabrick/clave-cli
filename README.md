@@ -41,18 +41,23 @@ cargo build --release
 
 `./clave` можно скопировать или симлинкнуть в любой каталог из `PATH`.
 
-**Через `cargo install` (только бинарник TUI):**
+**Через `cargo install` (самодостаточный бинарник):**
 
 ```bash
 cargo install --git https://github.com/grabrick/clave-cli-v0   # ставит `clave` в ~/.cargo/bin
 ```
 
-Прямой чат заработает сразу. Для `/plan` нужен bash-движок `spec-clave`/`spec-duel`
-(он не входит в бинарник): держи рядом репозиторий или укажи путь —
-`export CLAVE_ENGINE=/путь/к/spec-duel`.
+Движок планирования `spec-clave`/`spec-duel` **вшит в бинарник**: при первом `/plan`
+он распаковывается в `~/.duel/engine/` (переопределяется `CLAVE_HOME`/`DUEL_HOME`),
+так что и прямой чат, и планирование работают «из коробки», без репозитория рядом.
+Если нужен свой движок — переопредели путь: `export CLAVE_ENGINE=/путь/к/spec-clave`.
 
-> Готовые бинарники в GitHub Releases (mac/linux) и brew-формула — в планах
-> (требуют CI, который пока не настроен).
+> **Windows.** Прямой чат работает нативно. Для `/plan` нужен bash (движок —
+> bash-скрипт): запускай `clave` из-под WSL или Git Bash. На macOS/Linux bash есть
+> по умолчанию — там всё работает сразу.
+
+> Готовые бинарники в GitHub Releases (mac/linux/win) и brew-формула — следующий
+> шаг (требуют release-CI, который пока не настроен).
 
 ## Запуск
 
