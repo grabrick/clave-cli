@@ -112,29 +112,26 @@ impl App {
         self.selected_suggestion = 0;
     }
 
-    pub(crate) fn history_prev(&mut self) {
+    /// Стрелка Вверх в инпуте. В многострочном вводе (курсор не на первой строке)
+    /// двигает курсор на строку выше; на первой строке листает палитру подсказок
+    /// или уходит в историю (с сохранением черновика).
+    pub(crate) fn input_up(&mut self) {
         if self.history_index.is_none() {
             let suggestions = self.suggestions();
             if !suggestions.is_empty() {
                 self.selected_suggestion = self.selected_suggestion.saturating_sub(1);
                 return;
             }
+            if line_start_boundary(&self.input, self.cursor) > 0 {
+                self.move_cursor_up();
+                return;
+            }
         }
-
-        if self.history.is_empty() {
-            return;
-        }
-
-        let next_index = match self.history_index {
-            Some(index) => index.saturating_sub(1),
-            None => self.history.len() - 1,
-        };
-        self.history_index = Some(next_index);
-        self.input = self.history[next_index].clone();
-        self.cursor = self.input.len();
+        self.history_prev();
     }
 
-    pub(crate) fn history_next(&mut self) {
+    /// Стрелка Вниз в инпуте — симметрично `input_up`.
+    pub(crate) fn input_down(&mut self) {
         if self.history_index.is_none() {
             let suggestions = self.suggestions();
             if !suggestions.is_empty() {
@@ -142,20 +139,128 @@ impl App {
                     (self.selected_suggestion + 1).min(suggestions.len() - 1);
                 return;
             }
+            if line_end_boundary(&self.input, self.cursor) < self.input.len() {
+                self.move_cursor_down();
+                return;
+            }
         }
+        self.history_next();
+    }
 
+    /// Курсор на строку выше, сохраняя визуальную колонку (в символах).
+    pub(crate) fn move_cursor_up(&mut self) {
+        let line_start = line_start_boundary(&self.input, self.cursor);
+        if line_start == 0 {
+            return;
+        }
+        let col = self.input[line_start..self.cursor].chars().count();
+        let prev_newline = line_start - 1;
+        let prev_start = line_start_boundary(&self.input, prev_newline);
+        self.cursor = byte_at_column(&self.input, prev_start, prev_newline, col);
+    }
+
+    /// Курсор на строку ниже, сохраняя визуальную колонку (в символах).
+    pub(crate) fn move_cursor_down(&mut self) {
+        let line_end = line_end_boundary(&self.input, self.cursor);
+        if line_end >= self.input.len() {
+            return;
+        }
+        let line_start = line_start_boundary(&self.input, self.cursor);
+        let col = self.input[line_start..self.cursor].chars().count();
+        let next_start = line_end + 1;
+        let next_end = line_end_boundary(&self.input, next_start);
+        self.cursor = byte_at_column(&self.input, next_start, next_end, col);
+    }
+
+    /// История назад (Ctrl+P или Вверх на первой строке). При первом входе
+    /// запоминает текущий ввод как черновик — чтобы вернуть его по `Down`.
+    pub(crate) fn history_prev(&mut self) {
+        if self.history.is_empty() {
+            return;
+        }
+        let next_index = match self.history_index {
+            Some(index) => index.saturating_sub(1),
+            None => {
+                self.history_draft = Some(self.input.clone());
+                self.history.len() - 1
+            }
+        };
+        self.history_index = Some(next_index);
+        self.input = self.history[next_index].clone();
+        self.cursor = self.input.len();
+    }
+
+    /// История вперёд (Ctrl+N или Вниз на последней строке). За концом истории
+    /// возвращает сохранённый черновик, а не очищает ввод.
+    pub(crate) fn history_next(&mut self) {
         let Some(index) = self.history_index else {
             return;
         };
-
         if index + 1 >= self.history.len() {
             self.history_index = None;
-            self.input.clear();
+            self.input = self.history_draft.take().unwrap_or_default();
         } else {
             let next_index = index + 1;
             self.history_index = Some(next_index);
             self.input = self.history[next_index].clone();
         }
         self.cursor = self.input.len();
+    }
+}
+
+/// Байтовая позиция `col`-го символа в `input[start..end]` (или `end`, если строка
+/// короче). Держит «колонку» курсора при переходе между строками.
+fn byte_at_column(input: &str, start: usize, end: usize, col: usize) -> usize {
+    let mut pos = start;
+    for (count, ch) in input[start..end].chars().enumerate() {
+        if count >= col {
+            break;
+        }
+        pos += ch.len_utf8();
+    }
+    pos
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_round_trip_restores_draft() {
+        let mut app = App::new();
+        app.history = vec!["old command".to_string()];
+        app.input = "my draft".to_string();
+        app.cursor = app.input.len();
+        app.input_up();
+        assert_eq!(app.input, "old command");
+        app.input_down();
+        assert_eq!(app.input, "my draft", "черновик восстановлен, не потерян");
+    }
+
+    #[test]
+    fn arrow_up_moves_cursor_in_multiline_not_history() {
+        let mut app = App::new();
+        app.history = vec!["old".to_string()];
+        app.input = "ab\ncde".to_string();
+        app.cursor = app.input.len();
+        app.input_up();
+        assert_eq!(app.input, "ab\ncde", "ввод не заменён историей");
+        assert!(app.history_index.is_none(), "в историю не входили");
+        assert!(
+            app.cursor <= 2,
+            "курсор ушёл на первую строку: {}",
+            app.cursor
+        );
+    }
+
+    #[test]
+    fn arrow_down_moves_cursor_in_multiline_not_history() {
+        let mut app = App::new();
+        app.input = "abc\nde".to_string();
+        app.cursor = 1;
+        app.input_down();
+        assert_eq!(app.input, "abc\nde");
+        assert!(app.history_index.is_none());
+        assert_eq!(app.cursor, 5, "курсор на второй строке, та же колонка");
     }
 }
