@@ -79,14 +79,11 @@ pub(crate) fn idle_verb(lang: Language, seed: u128) -> &'static str {
 }
 
 /// Неактивная строка лоадера после завершения рана: `✻ {глагол} · {время}`.
-/// Приглушённая, без шиммера — в отличие от активной `✳ …`.
+/// Серая, без шиммера — в отличие от активной `✳ …`.
 pub(crate) fn idle_loader_line(app: &App, elapsed: Duration) -> Line<'static> {
     let verb = idle_verb(app.lang, elapsed.as_millis());
     let text = format!("✻ {verb} · {}", format_elapsed(elapsed));
-    Line::from(Span::styled(
-        text,
-        Style::default().fg(app.theme.accent_dim()),
-    ))
+    Line::from(Span::styled(text, Style::default().fg(MUTED)))
 }
 
 pub(crate) fn loader_lines(app: &App, width: u16) -> Vec<Line<'static>> {
