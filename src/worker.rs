@@ -730,11 +730,14 @@ fn tandem_accumulate(total: &mut RunUsage, usage: &Option<RunUsage>) {
 }
 
 fn emit_tandem_step(tx: &Sender<WorkerEvent>, marker: &str, who: &str, phase: &str, text: &str) {
+    // Пустая строка-разделитель ПЕРЕД шагом, а не после: иначе последний шаг
+    // оставляет хвостовую пустую строку, и над inactive-лоадером получается двойной
+    // отступ (хвост шага + gap_top).
+    let _ = tx.send(WorkerEvent::ChatLine(String::new()));
     let _ = tx.send(WorkerEvent::ChatLine(format!("{marker} {who} · {phase}")));
     for line in text.trim().lines() {
         let _ = tx.send(WorkerEvent::ChatLine(line.to_string()));
     }
-    let _ = tx.send(WorkerEvent::ChatLine(String::new()));
 }
 
 fn tandem_notice(tx: &Sender<WorkerEvent>, text: String) {

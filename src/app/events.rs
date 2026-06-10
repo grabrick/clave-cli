@@ -168,6 +168,7 @@ impl App {
                 WorkerEvent::Activity(line) => self.push_run_activity(line),
                 WorkerEvent::Done(code) => {
                     self.running = false;
+                    self.last_run_duration = self.run_started_at.map(|s| s.elapsed());
                     self.run_started_at = None;
                     self.run_label.clear();
                     self.run_token_estimate = None;
@@ -190,6 +191,7 @@ impl App {
                         self.usage.record(provider, usage);
                     }
                     self.running = false;
+                    self.last_run_duration = self.run_started_at.map(|s| s.elapsed());
                     self.run_started_at = None;
                     self.run_label.clear();
                     self.run_token_estimate = None;
@@ -242,6 +244,7 @@ impl App {
                         self.usage.record(provider, usage);
                     }
                     self.running = false;
+                    self.last_run_duration = self.run_started_at.map(|s| s.elapsed());
                     self.run_started_at = None;
                     self.run_label.clear();
                     self.run_token_estimate = None;
@@ -265,6 +268,7 @@ impl App {
                 }
                 WorkerEvent::Cancelled => {
                     self.running = false;
+                    self.last_run_duration = None;
                     self.run_started_at = None;
                     self.run_label.clear();
                     self.run_token_estimate = None;
