@@ -51,7 +51,7 @@ pub(crate) fn panel_active(app: &App) -> bool {
 /// Loader сюда НЕ входит — он рисуется над вводом (в области диалога), не под футером.
 pub(crate) fn panel_height(app: &App, width: u16, cap: u16) -> u16 {
     let height = if let Some(state) = &app.ask {
-        return ask_panel_height(state, cap);
+        return ask_panel_height(state, width, cap);
     } else if normalized_command_query(&app.input).is_some() {
         COMMAND_PALETTE_ROWS
     } else if app.overlay == Overlay::Shortcuts {
