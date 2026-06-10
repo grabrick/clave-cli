@@ -86,6 +86,7 @@ impl App {
         // подтянется по ходу через WorkerEvent::Activity.
         self.run_activity.clear();
         self.live_answer.clear();
+        self.live_reasoning.clear();
         self.cancel_tx = Some(cancel_tx);
         self.last_ctrl_c_at = None;
         self.status = format!("{}...", provider_name.to_lowercase());
