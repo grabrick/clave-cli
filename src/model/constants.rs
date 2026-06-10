@@ -13,29 +13,3 @@ pub(crate) const MUTED: Color = Color::Gray;
 pub(crate) const MAX_TRANSCRIPT_LINES: usize = 700;
 pub(crate) const MAX_HISTORY_LINES: usize = 200;
 pub(crate) const CHAT_FILE_EXTENSION: &str = "clave";
-/// Фразы лоадера крутятся по таймеру и задают «настроение» думающего инструмента.
-/// Разнообразные и с характером — чтобы ощущался живой ИИ, а не статичный спиннер.
-pub(crate) const LOADER_PHRASES_RU: &[&str] = &[
-    "Думаю",
-    "Читаю контекст",
-    "Соображаю",
-    "Прикидываю",
-    "Сверяюсь",
-    "Взвешиваю",
-    "Кручу шестерёнки",
-    "Копаюсь в деталях",
-    "Раскладываю по полочкам",
-    "Собираю мысли",
-];
-pub(crate) const LOADER_PHRASES_EN: &[&str] = &[
-    "Thinking",
-    "Reading context",
-    "Pondering",
-    "Mulling it over",
-    "Cross-checking",
-    "Weighing options",
-    "Cranking gears",
-    "Digging into details",
-    "Connecting the dots",
-    "Gathering thoughts",
-];
