@@ -14,7 +14,7 @@ on your machine. The tools keep using their own local auth. Clave only
 orchestrates them around your working directory.
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+cargo install --git https://github.com/grabrick/clave-cli
 clave
 ```
 
@@ -33,41 +33,65 @@ clave
 
 ## Install
 
-### Requirements
+### Quick Install (prebuilt binary, no Rust needed)
 
-- Rust + `cargo`
-- Claude Code CLI as `claude`, installed and logged in
-- Codex CLI as `codex`, installed and logged in
-
-### Cargo Install
+macOS / Linux:
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/grabrick/clave-cli/releases/latest/download/clave-installer.sh | sh
 ```
 
-This installs the `clave` binary into `~/.cargo/bin`. The planning engine is
-embedded into the binary and is unpacked on first use into `~/.clave/engine/`, so
-the TUI and `/plan` work without keeping the repository next to the executable.
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/grabrick/clave-cli/releases/latest/download/clave-installer.ps1 | iex"
+```
+
+Or download a prebuilt archive for your platform from the
+[Releases page](https://github.com/grabrick/clave-cli/releases) and put the
+`clave` binary anywhere on your `PATH`.
+
+> **macOS note:** the binaries are not yet code-signed or notarized. On first run,
+> Gatekeeper may block `clave` as coming from an "unidentified developer". Allow it
+> via *System Settings → Privacy & Security → Open Anyway*, or run
+> `xattr -d com.apple.quarantine "$(which clave)"`.
+
+### Requirements
+
+- Claude Code CLI as `claude`, installed and logged in
+- Codex CLI as `codex`, installed and logged in
+- On Windows, `/plan` needs WSL or Git Bash (the planning engine is a Bash script);
+  direct chat works natively
+
+### From Cargo
+
+```bash
+cargo install --git https://github.com/grabrick/clave-cli
+```
+
+This installs the `clave` binary into `~/.cargo/bin`. If `clave` is then reported as
+"command not found", that directory is not on your `PATH` — common when `cargo` was
+installed via Homebrew or a system package (rustup adds it automatically). Add it:
+
+```bash
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+The planning engine is embedded into the binary and unpacked on first use into
+`~/.clave/engine/`, so the TUI and `/plan` work without keeping the repository next
+to the executable.
 
 ### From Source
 
 ```bash
-git clone https://github.com/grabrick/clave-cli-v0
-cd clave-cli-v0
+git clone https://github.com/grabrick/clave-cli
+cd clave-cli
 cargo build --release
 ./clave
 ```
 
 The `./clave` launcher looks for the release binary and can fall back to a local
 Cargo run during development.
-
-### Windows
-
-Direct chat works natively. The `/plan` engine is a Bash script, so planning mode
-currently needs WSL or Git Bash on Windows.
-
-Prebuilt GitHub Release binaries and a Homebrew formula are planned after release
-CI is added.
 
 ## Quick Start
 
@@ -277,7 +301,7 @@ Near-term roadmap:
 Быстрая установка:
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+cargo install --git https://github.com/grabrick/clave-cli
 clave
 ```
 
