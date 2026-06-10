@@ -173,6 +173,7 @@ Common commands:
 | `/export` | export the current chat to Markdown |
 | `/search` | search the transcript |
 | `/cost` | show model usage and estimated cost |
+| `/uptime` | show how long the session has been running |
 | `/help` | show the full command list |
 
 ## Shortcuts
