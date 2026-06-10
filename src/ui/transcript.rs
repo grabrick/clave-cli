@@ -28,7 +28,7 @@ pub(crate) fn transcript_entry_lines_with_state(
         state.in_code_block = false;
         // Пустая строка перед репликой пользователя — отделяет ход от предыдущего.
         let mut out = vec![Line::from("")];
-        out.extend(user_message_box(message, lang, width, theme));
+        out.extend(user_message_lines(message, width, theme));
         return out;
     }
 
@@ -54,52 +54,40 @@ pub(crate) fn transcript_entry_lines_with_state(
     out
 }
 
-pub(crate) fn user_message_box(
-    message: &str,
-    lang: Language,
-    width: u16,
-    theme: Theme,
-) -> Vec<Line<'static>> {
-    let width = width as usize;
-    if width < 12 {
-        return vec![Line::styled(
-            format!("{} {}", lang.choose("Ты", "You"), message),
-            Style::default()
-                .fg(theme.accent())
-                .add_modifier(Modifier::BOLD),
-        )];
-    }
+/// Реплика пользователя: стрелка-маркер + текст на залитом фоном «пузыре».
+/// Без рамки и подписи «Ты» — отправленное сообщение видно по фону.
+pub(crate) fn user_message_lines(message: &str, width: u16, theme: Theme) -> Vec<Line<'static>> {
+    let arrow_style = Style::default()
+        .fg(theme.accent())
+        .add_modifier(Modifier::BOLD);
+    let bubble_style = Style::default()
+        .fg(Color::White)
+        .bg(theme.accent_bg())
+        .add_modifier(Modifier::BOLD);
 
-    let label = format!(" {} ", lang.choose("Ты", "You"));
-    let content_width = width.saturating_sub(4).max(8);
-    let horizontal_width = content_width + 2;
-    let mut lines = Vec::new();
-    let top_tail = "─".repeat(horizontal_width.saturating_sub(label.chars().count()));
-    lines.push(Line::styled(
-        format!("╭{label}{top_tail}╮"),
-        Style::default().fg(theme.accent()),
-    ));
+    // «➤ » (2 ячейки) + по пробелу-полю слева/справа внутри пузыря = 4 ячейки.
+    let content_width = (width as usize).saturating_sub(4).max(8);
+    let wrapped = wrap_chars(message, content_width);
+    // Пузырь обнимает текст: ширина = самая длинная строка (не на всю ширину экрана).
+    let bubble = wrapped
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
 
-    for wrapped in wrap_chars(message, content_width) {
-        let padding = content_width.saturating_sub(wrapped.chars().count());
-        lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(theme.accent())),
-            Span::styled(
-                wrapped,
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" ".repeat(padding)),
-            Span::styled(" │", Style::default().fg(theme.accent())),
-        ]));
-    }
-
-    lines.push(Line::styled(
-        format!("╰{}╯", "─".repeat(horizontal_width)),
-        Style::default().fg(theme.accent()),
-    ));
-    lines
+    wrapped
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            // Стрелка только на первой строке, продолжения — отступ под текст.
+            let prefix = if index == 0 { "➤ " } else { "  " };
+            let pad = " ".repeat(bubble.saturating_sub(line.chars().count()));
+            Line::from(vec![
+                Span::styled(prefix, arrow_style),
+                Span::styled(format!(" {line}{pad} "), bubble_style),
+            ])
+        })
+        .collect()
 }
 
 /// Разбивает строку на спаны, подсвечивая inline-код в обратных кавычках.
@@ -362,6 +350,32 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    #[test]
+    fn user_message_uses_arrow_and_background_not_box() {
+        let lines = user_message_lines("привет мир", 80, Theme::Purple);
+        assert_eq!(lines.len(), 1, "короткое сообщение — одна строка");
+        let text: String = plain(&lines[0]);
+        // Стрелка-маркер есть, рамки и подписи «Ты» — нет.
+        assert!(text.starts_with("➤ "), "ведущая стрелка: {text:?}");
+        assert!(!text.contains("Ты") && !text.contains("You"));
+        for ch in ['╭', '╮', '╰', '╯', '│', '─'] {
+            assert!(!text.contains(ch), "нет символов рамки: {ch}");
+        }
+        // Текст лежит на залитом фоном «пузыре» (bg = accent_bg темы).
+        let bubble = lines[0]
+            .spans
+            .iter()
+            .find(|s| s.content.contains("привет мир"))
+            .expect("есть спан с текстом");
+        assert_eq!(bubble.style.bg, Some(Theme::Purple.accent_bg()), "фон-пузырь");
+
+        // Многострочное сообщение: стрелка только на первой строке.
+        let many = user_message_lines(&"слово ".repeat(60), 40, Theme::Purple);
+        assert!(many.len() > 1);
+        assert!(plain(&many[0]).starts_with("➤ "));
+        assert!(plain(&many[1]).starts_with("  "), "продолжение — отступ, без стрелки");
     }
 
     #[test]
