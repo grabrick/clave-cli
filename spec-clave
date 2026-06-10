@@ -235,6 +235,12 @@ else
   echo "Reviewer effort: $REVIEWER_EFFORT"
 fi
 
+ENGINEERING_PRINCIPLES="Engineering principles (every step):
+- Simplicity first: prefer the smallest solution that fully solves the task. Complexity and abstraction must earn their place.
+- Stay lean on dependencies: default to the standard library and packages already in this project. Do NOT add a new or heavy dependency unless clearly justified — state what it buys and why existing code won't do.
+- Respect THIS codebase: follow its existing architecture, conventions and patterns. Don't graft in foreign paradigms.
+- YAGNI: build what the task needs now, not speculative generality."
+
 write_initial_prompt() {
   local path="$1"
   cat > "$path" <<EOF
@@ -251,6 +257,7 @@ Hard rules:
 - Define acceptance criteria.
 - Define what can be demoed tomorrow.
 - Prefer local CLI/API adapters before deep platform integrations.
+- Keep the spec lean: minimal scope and minimal new dependencies; justify any heavy library.
 
 Required markdown sections:
 1. Goal
@@ -266,6 +273,8 @@ Required markdown sections:
 11. Questions for Human Decision
 12. Tomorrow Demo
 
+$ENGINEERING_PRINCIPLES
+
 Raw task:
 $TASK
 EOF
@@ -278,6 +287,10 @@ write_codex_review_prompt() {
   cat > "$path" <<EOF
 You are the skeptical senior fullstack reviewer in a two-agent planning loop.
 
+$ENGINEERING_PRINCIPLES
+
+Judge, don't rubber-stamp: read the spec against the real task, form your OWN reasoned opinion, and agree only after checking.
+
 Your job: protect delivery speed and implementation quality. Review the spec
 as if the developer wants a shippable 3-5 day MVP.
 
@@ -289,7 +302,7 @@ VERDICT: APPROVE or VERDICT: REVISE
 List only issues that truly block implementation.
 
 ## Scope Cuts
-What must be removed from V0/V1.
+What must be removed from V0/V1. Flag any unjustified dependency, heavy library, or added complexity, and name the leaner alternative — do not let the project become bloated.
 
 ## Missing Decisions
 Questions that require a human decision.
@@ -323,6 +336,8 @@ review below. Do not defend the previous spec. Resolve the review directly.
 
 If a decision cannot be made safely, put it under "Questions for Human Decision"
 instead of hiding it.
+
+$ENGINEERING_PRINCIPLES
 
 Output only the revised markdown spec with the same section structure.
 

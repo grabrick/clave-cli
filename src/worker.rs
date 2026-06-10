@@ -199,14 +199,31 @@ fn tandem_lang_hint(lang: Language) -> &'static str {
     )
 }
 
+/// Общий инженерный кодекс для tandem-промптов (обе роли).
+const ENGINEERING_PRINCIPLES: &str = "Engineering principles (every step):\n\
+- Simplicity first: prefer the smallest solution that fully solves the task. Complexity and abstraction must earn their place.\n\
+- Stay lean on dependencies: default to the standard library and crates/packages already in this project. Do NOT add a new or heavy dependency unless clearly justified — if you do, state in one line what it buys and why existing code won't do.\n\
+- Respect THIS codebase: follow its existing architecture, conventions and patterns; read the relevant files before proposing. Don't graft in foreign paradigms.\n\
+- YAGNI: build what the task needs now, not speculative generality.";
+
+/// Добавка для роли критика: судить, а не поддакивать.
+const CRITIC_DISCIPLINE: &str = "Judge, don't rubber-stamp: do NOT trust the other agent's answer at face value. Read what was actually proposed/changed, verify it against the real code, and form your OWN reasoned opinion. Agree only after checking; when you disagree, be specific. Actively flag any unjustified dependency, heavy library, or added complexity, and name the leaner alternative.";
+
+/// Добавка для роли исполнителя: минимализм.
+const EXECUTOR_DISCIPLINE: &str = "Reach for the minimal change first; if you add a dependency or abstraction, justify it in one line.";
+
 pub(crate) fn tandem_propose_prompt(task: &str, transcript: &str, lang: Language) -> String {
     format!(
         "You are {APP_NAME}, the EXECUTOR working in a pair with a CRITIC. PLAN MODE.\n\
          Study the working directory (read files, search). Propose a concrete approach to \
          the task: which files, what changes, and why. Address the critic's prior objections \
-         if any. Do NOT modify files or run commands — this is discussion. {hint}\n\n\
+         if any. Do NOT modify files or run commands — this is discussion.\n\n\
+         {principles}\n\n{discipline}\n\n\
+         {hint}\n\n\
          Task:\n{task}\n\n\
          Tandem transcript so far:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = EXECUTOR_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         transcript = if transcript.trim().is_empty() {
@@ -223,10 +240,13 @@ pub(crate) fn tandem_challenge_prompt(task: &str, transcript: &str, lang: Langua
          Study the code (read-only) and STRICTLY evaluate the executor's proposed approach: \
          gaps, risks, what is missing, better alternatives. Do NOT agree out of politeness. \
          End with EXACTLY one line: `TANDEM: CONSENSUS` only if the approach is genuinely \
-         correct and complete, otherwise `TANDEM: CONTINUE` followed by concrete objections. \
+         correct and complete, otherwise `TANDEM: CONTINUE` followed by concrete objections.\n\n\
+         {principles}\n\n{discipline}\n\n\
          {hint}\n\n\
          Task:\n{task}\n\n\
          Tandem transcript so far:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = CRITIC_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         transcript = if transcript.trim().is_empty() {
@@ -242,9 +262,13 @@ pub(crate) fn tandem_execute_prompt(task: &str, transcript: &str, lang: Language
         "You are {APP_NAME}, the EXECUTOR. The approach below was agreed with the critic. \
          Implement the task fully in the working directory: read, create and edit files and \
          run commands as needed. If reality differs from the plan, adapt within its intent. \
-         Keep your final answer concise. {hint}\n\n\
+         Keep your final answer concise.\n\n\
+         {principles}\n\n{discipline}\n\n\
+         {hint}\n\n\
          Task:\n{task}\n\n\
          Agreed approach / transcript:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = EXECUTOR_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         transcript = if transcript.trim().is_empty() {
@@ -260,9 +284,13 @@ pub(crate) fn tandem_review_prompt(task: &str, transcript: &str, lang: Language)
         "You are {APP_NAME}, the CRITIC. The executor applied the approach. Inspect the REAL \
          result (read the changed files). Does it match what was agreed, is it correct, any \
          bugs or omissions? End with EXACTLY one line: `TANDEM: CONSENSUS` if the result is \
-         good, otherwise `TANDEM: CONTINUE` followed by what to fix. {hint}\n\n\
+         good, otherwise `TANDEM: CONTINUE` followed by what to fix.\n\n\
+         {principles}\n\n{discipline}\n\n\
+         {hint}\n\n\
          Task:\n{task}\n\n\
          Tandem transcript so far:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = CRITIC_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         transcript = if transcript.trim().is_empty() {
@@ -281,10 +309,14 @@ pub(crate) fn tandem_fix_prompt(
 ) -> String {
     format!(
         "You are {APP_NAME}, the EXECUTOR. The critic raised issues with the result. Fix them \
-         in the working directory. Keep your final answer concise. {hint}\n\n\
+         in the working directory. Keep your final answer concise.\n\n\
+         {principles}\n\n{discipline}\n\n\
+         {hint}\n\n\
          Task:\n{task}\n\n\
          Critic's review to address:\n{review}\n\n\
          Tandem transcript so far:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = EXECUTOR_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         review = review,
@@ -300,10 +332,13 @@ pub(crate) fn tandem_confirm_prompt(task: &str, transcript: &str, lang: Language
     format!(
         "You are {APP_NAME}, the CRITIC. The executor applied fixes. Briefly verify whether \
          your issues are resolved (read the changed files). End with EXACTLY one line: \
-         `TANDEM: CONSENSUS` if resolved, otherwise `TANDEM: CONTINUE` with what remains. \
+         `TANDEM: CONSENSUS` if resolved, otherwise `TANDEM: CONTINUE` with what remains.\n\n\
+         {principles}\n\n{discipline}\n\n\
          {hint}\n\n\
          Task:\n{task}\n\n\
          Tandem transcript so far:\n{transcript}",
+        principles = ENGINEERING_PRINCIPLES,
+        discipline = CRITIC_DISCIPLINE,
         hint = tandem_lang_hint(lang),
         task = task,
         transcript = if transcript.trim().is_empty() {
@@ -1821,5 +1856,34 @@ mod tests {
             summarize_claude_tool(&grep, Language::En),
             Some("Searching TODO".to_string())
         );
+    }
+
+    #[test]
+    fn tandem_prompts_carry_engineering_principles() {
+        let marker = "Stay lean on dependencies";
+        let exec = [
+            tandem_propose_prompt("t", "", Language::En),
+            tandem_execute_prompt("t", "", Language::En),
+            tandem_fix_prompt("t", "", "r", Language::En),
+        ];
+        for (i, p) in exec.iter().enumerate() {
+            assert!(p.contains(marker), "executor prompt #{i} has principles");
+            assert!(
+                p.contains("Reach for the minimal change first"),
+                "executor prompt #{i} has executor discipline"
+            );
+        }
+        let crit = [
+            tandem_challenge_prompt("t", "", Language::En),
+            tandem_review_prompt("t", "", Language::En),
+            tandem_confirm_prompt("t", "", Language::En),
+        ];
+        for (i, p) in crit.iter().enumerate() {
+            assert!(p.contains(marker), "critic prompt #{i} has principles");
+            assert!(
+                p.contains("do NOT trust the other agent's answer"),
+                "critic prompt #{i} has critic discipline"
+            );
+        }
     }
 }
