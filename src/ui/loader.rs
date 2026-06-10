@@ -5,21 +5,20 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
         .run_started_at
         .map(|started| started.elapsed())
         .unwrap_or_else(|| Duration::from_secs(0));
-    // Пока идёт рассуждение (до первых токенов ответа) — прямо называем это.
-    // Иначе крутим живые фразы по языку интерфейса, меняя их ~каждые 2.5с.
+    // Фраза отражает РЕАЛЬНОЕ состояние выполнения, а не крутится по таймеру
+    // (иначе сразу «видно, что это скрипт»): рассуждение → пишет ответ → ждёт.
+    // Конкретику (какой файл читает и т.п.) дают строки активности ⎿ ниже.
     let reasoning = !app.live_reasoning.is_empty() && app.live_answer.is_empty();
-    let phrase: &str = if reasoning {
+    let answering = !app.live_answer.is_empty();
+    // Шиммер включаем только когда реально идёт работа: стрим рассуждения/ответа
+    // или активность инструментов. В тишине ожидания первого байта — статично.
+    let active = reasoning || answering || !app.run_activity.is_empty();
+    let phrase = if reasoning {
         app.lang.choose("Рассуждаю", "Reasoning")
+    } else if answering {
+        app.lang.choose("Пишу ответ", "Writing answer")
     } else {
-        let phrases = if matches!(app.lang, Language::Ru) {
-            LOADER_PHRASES_RU
-        } else {
-            LOADER_PHRASES_EN
-        };
-        phrases
-            .get(((elapsed.as_millis() / 2500) as usize) % phrases.len())
-            .copied()
-            .unwrap_or("…")
+        app.lang.choose("Думаю", "Thinking")
     };
     let label = if app.run_label.is_empty() {
         app.mode.as_str().to_string()
@@ -48,8 +47,18 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
         format!("({} · {})", format_elapsed(elapsed), label)
     };
 
-    let mut spans =
-        theme_shimmer_text_spans(&format!("✳ {}… ", phrase), app.theme, current_effort_tick());
+    let head = format!("✳ {phrase}… ");
+    let mut spans = if active {
+        theme_shimmer_text_spans(&head, app.theme, current_effort_tick())
+    } else {
+        // Тишина ожидания — статичная приглушённая фраза без переливов.
+        vec![Span::styled(
+            head,
+            Style::default()
+                .fg(app.theme.accent_dim())
+                .add_modifier(Modifier::BOLD),
+        )]
+    };
     spans.push(Span::styled(
         detail,
         Style::default().fg(Color::Indexed(245)),
@@ -185,7 +194,9 @@ mod tests {
         assert!(line_text(&loader_line(&app)).contains("Рассуждаю"));
         let lines = loader_lines(&app, 80);
         assert!(
-            lines.iter().any(|l| line_text(l).contains("сверю с файлами")),
+            lines
+                .iter()
+                .any(|l| line_text(l).contains("сверю с файлами")),
             "виден свежий кусок мысли"
         );
         // Как пошёл ответ — рассуждение убирается, фраза снова обычная.
@@ -194,6 +205,26 @@ mod tests {
         assert!(!loader_lines(&app, 80)
             .iter()
             .any(|l| line_text(l).contains("сверю с файлами")));
+    }
+
+    #[test]
+    fn loader_shimmers_only_during_active_work() {
+        let mut app = App::new();
+        app.run_started_at = Some(Instant::now());
+        // Тишина ожидания: фраза статична (фраза = один спан + деталь).
+        let idle = loader_line(&app);
+        // Пошёл ответ → активная работа → шиммер (спан на символ, заметно дробнее).
+        app.live_answer = "ответ".to_string();
+        let active = loader_line(&app);
+        assert!(
+            active.spans.len() > idle.spans.len(),
+            "активная фраза переливается: idle={} active={}",
+            idle.spans.len(),
+            active.spans.len()
+        );
+        // Фраза отражает состояние, а не таймер.
+        assert!(line_text(&active).contains("Пишу ответ"));
+        assert!(line_text(&idle).contains("Думаю"));
     }
 
     #[test]
