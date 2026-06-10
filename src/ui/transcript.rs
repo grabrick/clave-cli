@@ -369,13 +369,20 @@ mod tests {
             .iter()
             .find(|s| s.content.contains("привет мир"))
             .expect("есть спан с текстом");
-        assert_eq!(bubble.style.bg, Some(Theme::Purple.accent_bg()), "фон-пузырь");
+        assert_eq!(
+            bubble.style.bg,
+            Some(Theme::Purple.accent_bg()),
+            "фон-пузырь"
+        );
 
         // Многострочное сообщение: стрелка только на первой строке.
         let many = user_message_lines(&"слово ".repeat(60), 40, Theme::Purple);
         assert!(many.len() > 1);
         assert!(plain(&many[0]).starts_with("➤ "));
-        assert!(plain(&many[1]).starts_with("  "), "продолжение — отступ, без стрелки");
+        assert!(
+            plain(&many[1]).starts_with("  "),
+            "продолжение — отступ, без стрелки"
+        );
     }
 
     #[test]
