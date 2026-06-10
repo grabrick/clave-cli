@@ -118,8 +118,27 @@ pub(crate) fn poll_timeout(animating: bool) -> Duration {
     }
 }
 
+/// Разрыв между итерациями цикла, после которого считаем, что ПК просыпался.
+/// Цикл в простое крутится ~раз в 100 мс, активные долгие задачи живут в потоках,
+/// так что гэп в несколько секунд бывает только при сне/заморозке процесса.
+pub(crate) fn resumed_after_gap(gap: Duration) -> bool {
+    gap > Duration::from_secs(3)
+}
+
 pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<()> {
+    // Часы по «настенному» времени: цикл крутится ~10 раз/сек, поэтому большой
+    // разрыв между итерациями = ПК уходил в сон. После пробуждения терминал
+    // мог перерисоваться/сдвинуть содержимое, а кэш позиций живого блока устарел
+    // → форсим полную перерисовку, иначе блок (футер) дублируется. Работает на
+    // любом терминале, не завися от того, прислал ли он Resize/Focus.
+    let mut last_tick = std::time::SystemTime::now();
     loop {
+        let now = std::time::SystemTime::now();
+        if resumed_after_gap(now.duration_since(last_tick).unwrap_or_default()) {
+            app.pending_full_redraw = true;
+        }
+        last_tick = now;
+
         app.drain_worker_events();
         app.advance_reveal();
         app.expire_footer_notice();
@@ -148,6 +167,9 @@ pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<(
                     app.finish_reveal_now();
                     app.paste_into_input(&text);
                 }
+                // Ресайз (в т.ч. после сна ПК / смены монитора): терминал перелил
+                // содержимое, кэш позиций живого блока устарел → перерисовать с нуля.
+                Event::Resize(_, _) => app.pending_full_redraw = true,
                 _ => {}
             }
         }
@@ -654,6 +676,16 @@ mod tests {
         assert!(poll_timeout(true) < poll_timeout(false));
         assert_eq!(poll_timeout(true), Duration::from_millis(16));
         assert_eq!(poll_timeout(false), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn gap_detects_sleep_but_not_normal_idle() {
+        // Обычные итерации цикла (≤100 мс) и небольшая возня — не сон.
+        assert!(!resumed_after_gap(Duration::from_millis(100)));
+        assert!(!resumed_after_gap(Duration::from_millis(900)));
+        // Многосекундный разрыв = ПК спал → полная перерисовка.
+        assert!(resumed_after_gap(Duration::from_secs(5)));
+        assert!(resumed_after_gap(Duration::from_secs(3600)));
     }
 
     #[test]

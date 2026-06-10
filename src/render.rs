@@ -75,6 +75,31 @@ impl LiveRenderer {
             self.prev_lines.clear();
         }
 
+        // Полная перерисовка после ресайза: терминал перелил историю под новую
+        // ширину, а наш кэш позиций (prev_height/cursor_above) описывает старую
+        // геометрию — относительные сдвиги курсора «съедут» и живой блок начнёт
+        // дублироваться. Чистим экран И скроллбэк, сбрасываем счётчик истории и
+        // состояние подсветки, чтобы структурный путь ниже перепечатал всё заново.
+        if app.pending_full_redraw {
+            app.pending_full_redraw = false;
+            {
+                let mut out = io::stdout().lock();
+                queue!(
+                    out,
+                    Clear(ClearType::All),
+                    Clear(ClearType::Purge),
+                    MoveTo(0, 0)
+                )?;
+                out.flush()?;
+            }
+            self.started = false;
+            self.prev_height = 0;
+            self.cursor_above = 0;
+            self.prev_lines.clear();
+            app.scrollback_count = 0;
+            app.flush_state = TranscriptRenderState::default();
+        }
+
         let (lines, cur_row, cur_col) = build_dynamic(app, width, full_h);
         let has_new_history = app.scrollback_count < app.transcript.len();
         let structural = !self.started || has_new_history || lines.len() != self.prev_lines.len();

@@ -55,6 +55,10 @@ pub(crate) struct App {
     /// Запрос на полную очистку терминала (экран + нативный скроллбэк): ставится
     /// при сбросе ленты (/clear, /new, /resume), исполняется рендером.
     pub(crate) pending_clear_screen: bool,
+    /// Запрос на полную перерисовку (история + живой блок) с чистого листа: ставится
+    /// при ресайзе терминала — геометрия сменилась, кэш позиций рендера устарел,
+    /// иначе живой блок «съезжает» и дублируется (классика после сна ПК).
+    pub(crate) pending_full_redraw: bool,
     /// Текст ответа, приходящий токен-стримом и показываемый вживую (claude). По
     /// завершении заменяется зафиксированным финальным текстом. Пусто → стрима не было
     /// (codex / нет partial-messages), тогда работает «печатная машинка» (reveal).
@@ -163,6 +167,7 @@ impl App {
             scrollback_count: 0,
             flush_state: TranscriptRenderState::default(),
             pending_clear_screen: false,
+            pending_full_redraw: false,
             live_answer: String::new(),
             reveal_buffer: Vec::new(),
             reveal: None,
