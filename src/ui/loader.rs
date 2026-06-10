@@ -66,6 +66,29 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
+/// Глагол прошедшего времени для «замороженного» лоадера. Детерминирован по
+/// seed (длительность рана) — выбирается один раз и не мигает между кадрами.
+pub(crate) fn idle_verb(lang: Language, seed: u128) -> &'static str {
+    let ru: [&'static str; 5] = ["Думал", "Размышлял", "Соображал", "Кумекал", "Прикидывал"];
+    let en: [&'static str; 5] = ["Thought", "Pondered", "Cogitated", "Mused", "Reasoned"];
+    let verbs = match lang {
+        Language::Ru => ru,
+        Language::En => en,
+    };
+    verbs[(seed as usize) % verbs.len()]
+}
+
+/// Неактивная строка лоадера после завершения рана: `✻ {глагол} · {время}`.
+/// Приглушённая, без шиммера — в отличие от активной `✳ …`.
+pub(crate) fn idle_loader_line(app: &App, elapsed: Duration) -> Line<'static> {
+    let verb = idle_verb(app.lang, elapsed.as_nanos());
+    let text = format!("✻ {verb} · {}", format_elapsed(elapsed));
+    Line::from(Span::styled(
+        text,
+        Style::default().fg(app.theme.accent_dim()),
+    ))
+}
+
 pub(crate) fn loader_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     let mut lines = vec![loader_line(app)];
     // Живой кусочек мысли, пока модель рассуждает до ответа — чтобы было видно,
@@ -237,6 +260,24 @@ mod tests {
             theme_shimmer_color(Theme::Amber, 1, 0),
             Theme::Purple.accent()
         );
+    }
+
+    #[test]
+    fn idle_loader_line_shows_verb_and_elapsed() {
+        let app = App::new();
+        let line = idle_loader_line(&app, Duration::from_secs(112));
+        let text = line_text(&line);
+        assert!(text.starts_with("✻ "), "inactive icon: {text}");
+        assert!(text.contains("1m 52s"), "elapsed formatted: {text}");
+        let ru = ["Думал", "Размышлял", "Соображал", "Кумекал", "Прикидывал"];
+        assert!(ru.iter().any(|v| text.contains(v)), "verb from set: {text}");
+    }
+
+    #[test]
+    fn idle_verb_is_deterministic_and_localized() {
+        assert_eq!(idle_verb(Language::Ru, 7), idle_verb(Language::Ru, 7));
+        let en = ["Thought", "Pondered", "Cogitated", "Mused", "Reasoned"];
+        assert!(en.contains(&idle_verb(Language::En, 3)), "en verb");
     }
 }
 
