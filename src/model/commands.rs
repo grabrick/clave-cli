@@ -256,6 +256,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Показать расход моделей и стоимость",
     },
     CommandSpec {
+        usage: "/version",
+        insert: "/version",
+        description_en: "Show version and environment info",
+        description_ru: "Показать версию и информацию об инструменте",
+    },
+    CommandSpec {
         usage: "/setup",
         insert: "/setup",
         description_en: "Open first-run setup again",
