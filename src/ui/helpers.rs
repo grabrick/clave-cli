@@ -197,4 +197,17 @@ mod tests {
             vec!["абвгд", "е"]
         );
     }
+
+    #[test]
+    fn wrap_chars_keeps_words_whole() {
+        // Слово не рвётся посреди буквы: «world» уезжает на новую строку целиком.
+        assert_eq!(wrap_chars("hello world", 7), vec!["hello", "world"]);
+        // Слово длиннее ширины влезть целиком не может — дробится по символам.
+        assert_eq!(wrap_chars("abcdefgh", 5), vec!["abcde", "fgh"]);
+        // Путь со спецсимволами короче ширины — переносится целиком, не по буквам.
+        assert_eq!(
+            wrap_chars("see src/app.rs now", 10),
+            vec!["see", "src/app.rs", "now"]
+        );
+    }
 }
