@@ -353,9 +353,10 @@ pub(crate) fn handle_input_key(app: &mut App, key: KeyEvent) {
         KeyCode::Delete => app.delete(),
         KeyCode::Left => app.move_left(),
         KeyCode::Right => app.move_right(),
-        // Скролл истории — нативный (колесо/скроллбар терминала, inline-режим).
-        KeyCode::Up => app.history_prev(),
-        KeyCode::Down => app.history_next(),
+        // Стрелки умные: в многострочном вводе двигают курсор по строкам, на краю —
+        // история (с сохранением черновика). Скролл ленты — нативный (колесо/скролл).
+        KeyCode::Up => app.input_up(),
+        KeyCode::Down => app.input_down(),
         KeyCode::Home => app.move_line_start(),
         KeyCode::End => app.move_line_end(),
         KeyCode::Esc => {

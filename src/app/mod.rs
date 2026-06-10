@@ -97,6 +97,8 @@ pub(crate) struct App {
     pub(crate) should_quit: bool,
     pub(crate) history: Vec<String>,
     pub(crate) history_index: Option<usize>,
+    /// Незавершённый ввод, сохранённый при входе в историю (для возврата по Down).
+    pub(crate) history_draft: Option<String>,
     pub(crate) selected_suggestion: usize,
     pub(crate) command_palette_opened_at: Option<Instant>,
     pub(crate) command_palette_query: String,
@@ -195,6 +197,7 @@ impl App {
             should_quit: false,
             history,
             history_index: None,
+            history_draft: None,
             selected_suggestion: 0,
             command_palette_opened_at: None,
             command_palette_query: String::new(),
