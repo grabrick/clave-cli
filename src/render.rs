@@ -277,10 +277,18 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
                 history_line_render(line, app.lang, width, app.theme, &mut state)
             }));
         }
+        // Верхний отступ перед лоадером (симметрично нижнему «воздуху»).
+        top.push(Line::from(""));
         top.extend(loader_lines(app, width));
         // Воздух между лоадером и полем ввода: спиннер не липнет к инпуту.
         // Пустая строка — последняя в top, окно всегда держит хвост → она ровно
         // над композером (правка раскладки/курсора не нужна).
+        top.push(Line::from(""));
+    } else if let Some(d) = app.last_run_duration {
+        // Ран завершён: «замороженный» лоадер с итоговым временем остаётся над
+        // инпутом до следующего ввода (следующий ран обнулит last_run_duration).
+        top.push(Line::from(""));
+        top.push(idle_loader_line(app, d));
         top.push(Line::from(""));
     }
     let top_h = (top.len() as u16).min(room);
