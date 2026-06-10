@@ -14,7 +14,7 @@ on your machine. The tools keep using their own local auth. Clave only
 orchestrates them around your working directory.
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+cargo install --git https://github.com/grabrick/clave-cli
 clave
 ```
 
@@ -38,17 +38,17 @@ clave
 macOS / Linux:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/grabrick/clave-cli-v0/releases/latest/download/clave-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/grabrick/clave-cli/releases/latest/download/clave-installer.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/grabrick/clave-cli-v0/releases/latest/download/clave-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/grabrick/clave-cli/releases/latest/download/clave-installer.ps1 | iex"
 ```
 
 Or download a prebuilt archive for your platform from the
-[Releases page](https://github.com/grabrick/clave-cli-v0/releases) and put the
+[Releases page](https://github.com/grabrick/clave-cli/releases) and put the
 `clave` binary anywhere on your `PATH`.
 
 > **macOS note:** the binaries are not yet code-signed or notarized. On first run,
@@ -66,7 +66,7 @@ Or download a prebuilt archive for your platform from the
 ### From Cargo
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+cargo install --git https://github.com/grabrick/clave-cli
 ```
 
 This installs the `clave` binary into `~/.cargo/bin`. If `clave` is then reported as
@@ -84,8 +84,8 @@ to the executable.
 ### From Source
 
 ```bash
-git clone https://github.com/grabrick/clave-cli-v0
-cd clave-cli-v0
+git clone https://github.com/grabrick/clave-cli
+cd clave-cli
 cargo build --release
 ./clave
 ```
@@ -301,7 +301,7 @@ Near-term roadmap:
 Быстрая установка:
 
 ```bash
-cargo install --git https://github.com/grabrick/clave-cli-v0
+cargo install --git https://github.com/grabrick/clave-cli
 clave
 ```
 
