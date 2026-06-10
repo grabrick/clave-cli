@@ -149,7 +149,7 @@ pub(crate) fn run_app(app: &mut App, renderer: &mut LiveRenderer) -> AnyResult<(
         renderer.render(app, width, full_h)?;
 
         if app.should_quit {
-            renderer.clear_for_exit()?;
+            renderer.clear_for_exit(app)?;
             return Ok(());
         }
 
