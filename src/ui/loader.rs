@@ -5,10 +5,22 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
         .run_started_at
         .map(|started| started.elapsed())
         .unwrap_or_else(|| Duration::from_secs(0));
-    let phrase = LOADER_PHRASES
-        .get(((elapsed.as_secs() / 6) as usize) % LOADER_PHRASES.len())
-        .copied()
-        .unwrap_or("Thinking");
+    // Пока идёт рассуждение (до первых токенов ответа) — прямо называем это.
+    // Иначе крутим живые фразы по языку интерфейса, меняя их ~каждые 2.5с.
+    let reasoning = !app.live_reasoning.is_empty() && app.live_answer.is_empty();
+    let phrase: &str = if reasoning {
+        app.lang.choose("Рассуждаю", "Reasoning")
+    } else {
+        let phrases = if matches!(app.lang, Language::Ru) {
+            LOADER_PHRASES_RU
+        } else {
+            LOADER_PHRASES_EN
+        };
+        phrases
+            .get(((elapsed.as_millis() / 2500) as usize) % phrases.len())
+            .copied()
+            .unwrap_or("…")
+    };
     let label = if app.run_label.is_empty() {
         app.mode.as_str().to_string()
     } else {
@@ -47,8 +59,40 @@ pub(crate) fn loader_line(app: &App) -> Line<'static> {
 
 pub(crate) fn loader_lines(app: &App, width: u16) -> Vec<Line<'static>> {
     let mut lines = vec![loader_line(app)];
+    // Живой кусочек мысли, пока модель рассуждает до ответа — чтобы было видно,
+    // что инструмент думает, а не просто крутит спиннер.
+    if !app.live_reasoning.is_empty() && app.live_answer.is_empty() {
+        if let Some(snippet) = reasoning_snippet(&app.live_reasoning, width) {
+            lines.push(Line::from(vec![
+                Span::styled("  ⎿ ", Style::default().fg(app.theme.accent_dim())),
+                Span::styled(
+                    snippet,
+                    Style::default().fg(MUTED).add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
+    }
     lines.extend(loader_activity_lines(app, width));
     lines
+}
+
+/// Хвост текущей «мысли» из потока рассуждения: последняя непустая строка,
+/// показанная с конца (самое свежее) и обрезанная по ширине.
+fn reasoning_snippet(reasoning: &str, width: u16) -> Option<String> {
+    let cap = width.saturating_sub(5).max(8) as usize;
+    let last = reasoning
+        .split('\n')
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())?;
+    let chars: Vec<char> = last.chars().collect();
+    if chars.len() > cap {
+        Some(format!(
+            "…{}",
+            chars[chars.len() - cap + 1..].iter().collect::<String>()
+        ))
+    } else {
+        Some(last.to_string())
+    }
 }
 
 pub(crate) fn loader_activity_lines(app: &App, width: u16) -> Vec<Line<'static>> {
@@ -130,6 +174,26 @@ mod tests {
         app.live_answer.clear();
         let text = line_text(&loader_line(&app));
         assert!(!text.contains('≈'), "нет токенов — нет пометки: {text}");
+    }
+
+    #[test]
+    fn loader_surfaces_reasoning_until_answer_starts() {
+        let mut app = App::new();
+        app.run_started_at = Some(Instant::now());
+        app.live_reasoning = "сначала пойму задачу\nтеперь сверю с файлами".to_string();
+        // Пока ответа нет — лоадер прямо говорит «Рассуждаю» и показывает хвост мысли.
+        assert!(line_text(&loader_line(&app)).contains("Рассуждаю"));
+        let lines = loader_lines(&app, 80);
+        assert!(
+            lines.iter().any(|l| line_text(l).contains("сверю с файлами")),
+            "виден свежий кусок мысли"
+        );
+        // Как пошёл ответ — рассуждение убирается, фраза снова обычная.
+        app.live_answer = "Ответ".to_string();
+        assert!(!line_text(&loader_line(&app)).contains("Рассуждаю"));
+        assert!(!loader_lines(&app, 80)
+            .iter()
+            .any(|l| line_text(l).contains("сверю с файлами")));
     }
 
     #[test]

@@ -6,6 +6,8 @@ pub(crate) enum WorkerEvent {
     ChatLine(String),
     /// Инкремент ответа модели (токен-стрим) — показывается вживую до завершения.
     StreamDelta(String),
+    /// Инкремент рассуждения (extended thinking) — стримится в лоадер до ответа.
+    ReasoningDelta(String),
     Activity(String),
     Done(i32),
     ChatDone(&'static str, i32, Option<RunUsage>),
@@ -161,6 +163,8 @@ impl App {
                 WorkerEvent::ChatLine(line) => self.reveal_buffer.push(line),
                 // Токен-стрим: дописываем в живой ответ (показывается сразу).
                 WorkerEvent::StreamDelta(delta) => self.live_answer.push_str(&delta),
+                // Рассуждение до ответа — копим отдельно, показываем в лоадере.
+                WorkerEvent::ReasoningDelta(delta) => self.live_reasoning.push_str(&delta),
                 WorkerEvent::Activity(line) => self.push_run_activity(line),
                 WorkerEvent::Done(code) => {
                     self.running = false;
@@ -214,6 +218,7 @@ impl App {
                     // Был ли токен-стрим (claude): тогда текст уже показан вживую.
                     let streamed = !self.live_answer.is_empty();
                     self.live_answer.clear();
+                    self.live_reasoning.clear();
                     // Выделяем из ответа запрос выбора (clave-ask): прозу — в ленту, блок
                     // — в селектор. Парсим сырой буфер (find_ask_block срезает строку
                     // маркера целиком, поэтому префикс «⏺» не мешает).
@@ -267,6 +272,7 @@ impl App {
                     self.reveal_buffer.clear();
                     self.reveal = None;
                     self.live_answer.clear();
+                    self.live_reasoning.clear();
                     self.reset_ask();
                     self.status = self.lang.choose("остановлено", "stopped").to_string();
                     // Чат с «отложенной» репликой отменяем начисто: убираем её из живого
@@ -299,6 +305,7 @@ impl App {
                     self.cancel_tx = None;
                     self.restore_on_cancel = None;
                     self.live_answer.clear();
+                    self.live_reasoning.clear();
                     // Реплику фиксируем в ленте — ран дошёл до ошибки, это след попытки.
                     if let Some(turn) = self.live_turn.take() {
                         self.push_system(turn);
@@ -318,6 +325,7 @@ impl App {
                     self.reveal_buffer.clear();
                     self.reveal = None;
                     self.live_answer.clear();
+                    self.live_reasoning.clear();
                     self.reset_ask();
                     self.pending_messages.clear();
                     // Не залогинены — реплику не отправили: убираем из живого блока и

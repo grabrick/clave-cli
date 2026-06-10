@@ -1292,6 +1292,27 @@ fn claude_text_delta(value: &serde_json::Value) -> Option<String> {
         .map(String::from)
 }
 
+/// Дельта рассуждения (`thinking_delta`) из стрима claude — то же ограждение, что и
+/// для текста ответа, но поле `thinking` вместо `text`. Пусто, если thinking выключен.
+fn claude_thinking_delta(value: &serde_json::Value) -> Option<String> {
+    let block = match value.get("type").and_then(|v| v.as_str()) {
+        Some("stream_event") => value.get("event")?,
+        _ => value,
+    };
+    if block.get("type").and_then(|v| v.as_str()) != Some("content_block_delta") {
+        return None;
+    }
+    let delta = block.get("delta")?;
+    if delta.get("type").and_then(|v| v.as_str()) != Some("thinking_delta") {
+        return None;
+    }
+    delta
+        .get("thinking")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 /// Потоково читает claude stream-json: токены ответа эмитит как StreamDelta (живой
 /// вывод), активность tool_use — в лоадер, и возвращает финальное result-событие.
 pub(crate) fn spawn_claude_activity_reader(
@@ -1310,6 +1331,12 @@ pub(crate) fn spawn_claude_activity_reader(
             };
             if let Some(delta) = claude_text_delta(&value) {
                 let _ = tx.send(WorkerEvent::StreamDelta(delta));
+                continue;
+            }
+            // Рассуждение (extended thinking при высоком effort) — отдельным потоком
+            // в лоадер, чтобы было видно, как модель думает до ответа.
+            if let Some(delta) = claude_thinking_delta(&value) {
+                let _ = tx.send(WorkerEvent::ReasoningDelta(delta));
                 continue;
             }
             match value.get("type").and_then(|v| v.as_str()) {
@@ -1534,6 +1561,18 @@ mod tests {
             claude_text_delta(&serde_json::json!({"type":"result","result":"x"})),
             None
         );
+    }
+
+    #[test]
+    fn claude_thinking_delta_extracts_reasoning_only() {
+        // thinking_delta (поле `thinking`) → берём как рассуждение.
+        let think = serde_json::json!({"type":"stream_event","event":{
+            "type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"прикину"}}});
+        assert_eq!(claude_thinking_delta(&think).as_deref(), Some("прикину"));
+        // Текст ответа рассуждением НЕ считаем (он идёт своим потоком).
+        let text = serde_json::json!({"type":"stream_event","event":{
+            "type":"content_block_delta","delta":{"type":"text_delta","text":"ответ"}}});
+        assert_eq!(claude_thinking_delta(&text), None);
     }
 
     #[test]

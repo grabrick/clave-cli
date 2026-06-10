@@ -63,6 +63,9 @@ pub(crate) struct App {
     /// завершении заменяется зафиксированным финальным текстом. Пусто → стрима не было
     /// (codex / нет partial-messages), тогда работает «печатная машинка» (reveal).
     pub(crate) live_answer: String,
+    /// Рассуждение (extended thinking) claude, приходящее до ответа — показывается в
+    /// лоадере вживую, чтобы ощущалось «модель думает». Очищается вместе с ответом.
+    pub(crate) live_reasoning: String,
     /// Строки ответа, накопленные до завершения (потом «печатаются» через reveal).
     pub(crate) reveal_buffer: Vec<String>,
     /// Активная плавная отрисовка ответа («печатная машинка») или None.
@@ -169,6 +172,7 @@ impl App {
             pending_clear_screen: false,
             pending_full_redraw: false,
             live_answer: String::new(),
+            live_reasoning: String::new(),
             reveal_buffer: Vec::new(),
             reveal: None,
             restore_on_cancel: None,

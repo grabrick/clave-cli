@@ -643,6 +643,7 @@ fn spawn_log_drain(state: SharedState, rx: Receiver<WorkerEvent>, run_id: u64) {
                 WorkerEvent::Line(line) | WorkerEvent::ChatLine(line) => state.push_log(line),
                 // Токен-стрим веб-ремоут не показывает — финальный текст придёт ChatLine'ом.
                 WorkerEvent::StreamDelta(_) => {}
+                WorkerEvent::ReasoningDelta(_) => {}
                 WorkerEvent::Activity(line) => state.push_log(format!("⎿ {line}")),
                 WorkerEvent::Done(code) => {
                     state.push_log(format!("⏺ Clave завершился с кодом {code}."));
