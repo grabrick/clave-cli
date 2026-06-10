@@ -46,8 +46,12 @@ pub(crate) fn transcript_entry_lines_with_state(
     if line.starts_with("⏺ ") || line.starts_with("❯ ") {
         out.push(Line::from(""));
     }
+    // Проза переносится ПО СЛОВАМ (wrap_chars), а не по символам — иначе слова,
+    // особенно со спецсимволами (пути, URL), рвутся посреди буквы. Ввод и code-блоки
+    // остаются на посимвольном wrap (там важны курсор-математика и сохранение пробелов).
+    let max_chars = width.saturating_sub(1).max(1) as usize;
     out.extend(
-        wrap_terminal_line(line, width)
+        wrap_chars(line, max_chars)
             .into_iter()
             .map(|wrapped| style_transcript_line(&wrapped, lang, theme)),
     );
