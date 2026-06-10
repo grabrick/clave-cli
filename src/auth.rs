@@ -39,6 +39,21 @@ pub(crate) fn provider_authenticated(provider: &str) -> bool {
     }
 }
 
+/// Лёгкая проверка наличия бинарника провайдера в PATH — без запуска процесса,
+/// поэтому безопасно звать из UI-потока (в отличие от `*_auth_probe`).
+pub(crate) fn provider_binary_present(provider: &str) -> bool {
+    let name = match provider {
+        "claude" => claude_binary(),
+        "codex" => codex_binary(),
+        _ => return false,
+    };
+    if name.contains('/') {
+        return std::path::Path::new(&name).is_file();
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(&name).is_file()))
+}
+
 pub(crate) fn codex_auth_probe() -> AuthProbe {
     match Command::new(codex_binary())
         .args(["login", "status"])

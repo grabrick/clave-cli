@@ -273,6 +273,7 @@ impl App {
             }
             "/status" => self.show_status(),
             "/cost" => self.show_cost(),
+            "/version" => self.show_version(),
             "/retry" => self.retry_last(),
             "/export" => self.export_chat(),
             "/search" => self.open_search(),
@@ -384,6 +385,32 @@ impl App {
             self.out_dir.clone(),
         );
         self.push_status_row(self.lang.choose("Чат", "Chat"), self.chat_id.clone());
+    }
+
+    fn show_version(&mut self) {
+        let mark = |present: bool| if present { "✓" } else { "✗" };
+        self.push_system(format!("⏺ {APP_COMMAND} v{}", env!("CARGO_PKG_VERSION")));
+        self.push_system(format!(
+            "  {} · {}",
+            env!("CARGO_PKG_REPOSITORY"),
+            env!("CARGO_PKG_LICENSE")
+        ));
+        self.push_system(format!(
+            "  claude {}  codex {}",
+            mark(provider_binary_present("claude")),
+            mark(provider_binary_present("codex")),
+        ));
+        self.push_system(format!(
+            "  {}: {}",
+            self.lang.choose("режим", "mode"),
+            self.mode.as_str()
+        ));
+        self.push_system(format!(
+            "  {}: {}",
+            self.lang.choose("состояние", "state"),
+            clave_state_dir().display()
+        ));
+        self.status = self.lang.choose("версия", "version").to_string();
     }
 
     fn show_cost(&mut self) {
@@ -523,6 +550,7 @@ impl App {
                 | "/out"
                 | "/status"
                 | "/cost"
+                | "/version"
                 | "/retry"
                 | "/export"
                 | "/search"
