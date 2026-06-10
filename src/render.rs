@@ -211,14 +211,37 @@ impl LiveRenderer {
         Ok(())
     }
 
-    /// При выходе из приложения: чистим ВЕСЬ видимый экран и уводим курсор в начало,
-    /// чтобы оболочка получила пустой терминал, а не остатки беседы (в inline-режиме
-    /// история живёт в нативном скроллбэке, и `leave_below` стёр бы только блок).
-    /// Скроллбэк НЕ пуржим: это снесло бы и то, что было в терминале до запуска clave.
-    /// Сама беседа не теряется — она сохранена в файле чата (вернуть через /chats).
-    pub(crate) fn clear_for_exit(&mut self) -> io::Result<()> {
+    /// При выходе из приложения: стираем только интерактивный низ (поле ввода,
+    /// футер, панель), НЕ трогая историю — она уже в нативном скроллбэке и должна
+    /// остаться видимой в терминале после выхода. «Замороженный» лоадер последнего
+    /// рана допечатываем как итоговую строку (`✻ Думал · 1m 52s`, в духе Claude
+    /// Code `✻ Cogitated · 1m 52s`): иначе он жил лишь в живом блоке и пропадал на
+    /// выходе. Раньше тут был `Clear(All)`, который уносил и лоадер, и контекст.
+    /// Беседа также сохранена в файле чата (вернуть через /chats).
+    pub(crate) fn clear_for_exit(&mut self, app: &App) -> io::Result<()> {
         let mut out = io::stdout().lock();
-        queue!(out, MoveTo(0, 0), Clear(ClearType::All), Show)?;
+        // Встаём на верх живого блока (как leave_below) и стираем его вниз.
+        if self.started {
+            if self.cursor_above > 0 {
+                queue!(out, MoveDown(self.cursor_above))?;
+            }
+            queue!(out, MoveToColumn(0))?;
+            if self.prev_height > 1 {
+                queue!(out, MoveUp(self.prev_height - 1))?;
+            }
+        } else {
+            queue!(out, MoveToColumn(0))?;
+        }
+        queue!(out, Clear(ClearType::FromCursorDown))?;
+        // Итоговый лоадер печатаем один раз → он переезжает в нативный скроллбэк и
+        // остаётся виден после выхода. Пустая строка над ним — воздух от истории
+        // (бывший gap_top живого блока).
+        if let Some(d) = app.last_run_duration {
+            queue!(out, Print("\r\n"))?;
+            queue_line(&mut out, &idle_loader_line(app, d))?;
+            queue!(out, Clear(ClearType::UntilNewLine), Print("\r\n"))?;
+        }
+        queue!(out, Show)?;
         out.flush()?;
         self.started = false;
         self.prev_height = 0;
@@ -277,9 +300,10 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
                 history_line_render(line, app.lang, width, app.theme, &mut state)
             }));
         }
-        // Отступ между ответом и лоадером — только когда ответ печатается. Сверху
-        // блока пустую строку уже даёт gap_top, иначе отступ был бы двойным.
-        if !visible.is_empty() {
+        // Отступ перед лоадером, когда сверху уже есть контент (реплика live_turn
+        // или печатаемый ответ) — иначе спиннер липнет к тексту. Если контента нет,
+        // верхнюю пустую строку уже даёт gap_top, второй отступ был бы двойным.
+        if !top.is_empty() {
             top.push(Line::from(""));
         }
         top.extend(loader_lines(app, width));
