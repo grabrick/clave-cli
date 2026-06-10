@@ -349,16 +349,12 @@ pub(crate) fn claude_chat_args<'a>(
 /// Бинарь claude: env-override (моки/тесты) → дефолт `claude`. Один источник
 /// для запуска И для auth-пробы, иначе проба игнорит override (см. провайдер-пробы).
 pub(crate) fn claude_binary() -> String {
-    env::var("CLAVE_CLAUDE")
-        .or_else(|_| env::var("AI_ORCHESTRATOR_CLAUDE"))
-        .unwrap_or_else(|_| "claude".to_string())
+    env::var("CLAVE_CLAUDE").unwrap_or_else(|_| "claude".to_string())
 }
 
 /// Бинарь codex: env-override (моки/тесты) → дефолт `codex`.
 pub(crate) fn codex_binary() -> String {
-    env::var("CLAVE_CODEX")
-        .or_else(|_| env::var("AI_ORCHESTRATOR_CODEX"))
-        .unwrap_or_else(|_| "codex".to_string())
+    env::var("CLAVE_CODEX").unwrap_or_else(|_| "codex".to_string())
 }
 
 /// Лимит простоя: нет вывода дольше него → провайдер считается зависшим и
