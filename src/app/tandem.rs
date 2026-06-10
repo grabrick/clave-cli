@@ -33,6 +33,7 @@ impl App {
 
         self.running = true;
         self.run_started_at = Some(Instant::now());
+        self.last_run_duration = None;
         self.run_label = self.lang.choose("Тандем", "Tandem").to_string();
         self.run_token_estimate = Some(estimate_tokens(&task));
         self.run_activity.clear();
