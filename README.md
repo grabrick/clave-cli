@@ -33,21 +33,53 @@ clave
 
 ## Install
 
+### Quick Install (prebuilt binary, no Rust needed)
+
+macOS / Linux:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/grabrick/clave-cli-v0/releases/latest/download/clave-installer.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/grabrick/clave-cli-v0/releases/latest/download/clave-installer.ps1 | iex"
+```
+
+Or download a prebuilt archive for your platform from the
+[Releases page](https://github.com/grabrick/clave-cli-v0/releases) and put the
+`clave` binary anywhere on your `PATH`.
+
+> **macOS note:** the binaries are not yet code-signed or notarized. On first run,
+> Gatekeeper may block `clave` as coming from an "unidentified developer". Allow it
+> via *System Settings → Privacy & Security → Open Anyway*, or run
+> `xattr -d com.apple.quarantine "$(which clave)"`.
+
 ### Requirements
 
-- Rust + `cargo`
 - Claude Code CLI as `claude`, installed and logged in
 - Codex CLI as `codex`, installed and logged in
+- On Windows, `/plan` needs WSL or Git Bash (the planning engine is a Bash script);
+  direct chat works natively
 
-### Cargo Install
+### From Cargo
 
 ```bash
 cargo install --git https://github.com/grabrick/clave-cli-v0
 ```
 
-This installs the `clave` binary into `~/.cargo/bin`. The planning engine is
-embedded into the binary and is unpacked on first use into `~/.clave/engine/`, so
-the TUI and `/plan` work without keeping the repository next to the executable.
+This installs the `clave` binary into `~/.cargo/bin`. If `clave` is then reported as
+"command not found", that directory is not on your `PATH` — common when `cargo` was
+installed via Homebrew or a system package (rustup adds it automatically). Add it:
+
+```bash
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+The planning engine is embedded into the binary and unpacked on first use into
+`~/.clave/engine/`, so the TUI and `/plan` work without keeping the repository next
+to the executable.
 
 ### From Source
 
@@ -60,14 +92,6 @@ cargo build --release
 
 The `./clave` launcher looks for the release binary and can fall back to a local
 Cargo run during development.
-
-### Windows
-
-Direct chat works natively. The `/plan` engine is a Bash script, so planning mode
-currently needs WSL or Git Bash on Windows.
-
-Prebuilt GitHub Release binaries and a Homebrew formula are planned after release
-CI is added.
 
 ## Quick Start
 

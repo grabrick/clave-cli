@@ -112,6 +112,28 @@ Fix tandem review status
 Document cargo install path
 ```
 
+## Cutting A Release
+
+Releases are built by `dist` (cargo-dist) and published to GitHub Releases by
+`.github/workflows/release.yml`, triggered by a version tag. The version source of
+truth is `version` in `Cargo.toml`.
+
+```bash
+# 1. Bump the version in Cargo.toml (e.g. 0.1.0 -> 0.1.1), then:
+cargo build                 # refresh Cargo.lock
+git commit -am "Release 0.1.1"
+git push
+
+# 2. Tag and push — this triggers the release workflow:
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Inspect the build matrix without spending CI minutes with `dist plan`, and build
+the host artifact locally with `dist build`. The generated workflow file is managed
+by dist — regenerate it with `dist generate` (or `dist init`) instead of editing it
+by hand.
+
 ## Русская памятка
 
 Рабочий язык интерфейса - русский, но публичные README/CONTRIBUTING теперь
