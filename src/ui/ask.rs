@@ -1,14 +1,32 @@
 use super::*;
 
 /// Высота панели селектора: рамка + (степпер) + контент + подсказка.
-pub(crate) fn ask_panel_height(state: &AskState, cap: u16) -> u16 {
+pub(crate) fn ask_panel_height(state: &AskState, width: u16, cap: u16) -> u16 {
     let stepper = u16::from(state.multi_question());
+    let iw = (width as usize).saturating_sub(2).max(8); // минус рамка
     let body = if state.on_confirm() {
-        (state.confirm_rows() as u16).min(8)
+        (state.confirm_rows() as u16).min(12)
+    } else if let Some(question) = state.question() {
+        // Высота с учётом переноса: строка(и) вопроса + варианты + «Свой ответ».
+        let mut rows = wrapped_rows(question.question.chars().count(), iw);
+        for opt in &question.options {
+            // ~6 символов на маркер/номер/чекбокс перед текстом варианта.
+            rows += wrapped_rows(opt.label.chars().count() + 6, iw);
+        }
+        rows += 1;
+        rows as u16
     } else {
-        1 + (state.rows() as u16).min(8) // строка вопроса + варианты
+        1
     };
     (2 + stepper + body + 1).min(cap).max(4)
+}
+
+/// Сколько визуальных строк займёт текст длиной `chars` при ширине `width`.
+fn wrapped_rows(chars: usize, width: usize) -> usize {
+    if width == 0 {
+        return 1;
+    }
+    chars.max(1).div_ceil(width)
 }
 
 pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -52,7 +70,7 @@ pub(crate) fn draw_ask_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Style::default().fg(MUTED),
     ));
 
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 fn stepper_line(state: &AskState, app: &App, color: Color) -> Line<'static> {
@@ -92,9 +110,9 @@ fn draw_question_rows(
     let (Some(question), Some(answer)) = (state.question(), state.current_answer()) else {
         return;
     };
-    // Текст вопроса (жирный, обрезан).
+    // Текст вопроса (жирный, переносится при нехватке ширины — см. Paragraph::wrap).
     lines.push(Line::styled(
-        truncate_chars(&question.question, iw),
+        question.question.clone(),
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),

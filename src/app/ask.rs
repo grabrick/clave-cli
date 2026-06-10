@@ -63,11 +63,6 @@ impl AskState {
         self.answers.get(self.step)
     }
 
-    /// Строк в списке текущего вопроса: варианты + «Свой ответ».
-    pub(crate) fn rows(&self) -> usize {
-        self.question().map(|q| q.options.len() + 1).unwrap_or(0)
-    }
-
     /// Курсор на строке «Свой ответ» текущего вопроса?
     pub(crate) fn on_custom_row(&self) -> bool {
         match (self.question(), self.current_answer()) {
