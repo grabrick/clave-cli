@@ -262,6 +262,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         description_ru: "Показать версию и информацию об инструменте",
     },
     CommandSpec {
+        usage: "/uptime",
+        insert: "/uptime",
+        description_en: "Show how long the session has been running",
+        description_ru: "Показать, сколько работает сессия",
+    },
+    CommandSpec {
         usage: "/setup",
         insert: "/setup",
         description_en: "Open first-run setup again",

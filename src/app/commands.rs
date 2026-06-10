@@ -274,6 +274,7 @@ impl App {
             "/status" => self.show_status(),
             "/cost" => self.show_cost(),
             "/version" => self.show_version(),
+            "/uptime" => self.show_uptime(),
             "/retry" => self.retry_last(),
             "/export" => self.export_chat(),
             "/search" => self.open_search(),
@@ -478,6 +479,18 @@ impl App {
         );
     }
 
+    fn show_uptime(&mut self) {
+        self.status = self.lang.choose("аптайм", "uptime").to_string();
+        self.push_system(
+            self.lang
+                .choose("⏺ Время работы сессии", "⏺ Session uptime"),
+        );
+        self.push_status_row(
+            self.lang.choose("Работает", "Running"),
+            format_elapsed(self.usage.started_at.elapsed()),
+        );
+    }
+
     fn retry_last(&mut self) {
         match self.last_chat_message.clone() {
             Some(message) => self.start_chat(message),
@@ -551,6 +564,7 @@ impl App {
                 | "/status"
                 | "/cost"
                 | "/version"
+                | "/uptime"
                 | "/retry"
                 | "/export"
                 | "/search"
