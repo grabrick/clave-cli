@@ -81,7 +81,7 @@ pub(crate) fn idle_verb(lang: Language, seed: u128) -> &'static str {
 /// Неактивная строка лоадера после завершения рана: `✻ {глагол} · {время}`.
 /// Приглушённая, без шиммера — в отличие от активной `✳ …`.
 pub(crate) fn idle_loader_line(app: &App, elapsed: Duration) -> Line<'static> {
-    let verb = idle_verb(app.lang, elapsed.as_nanos());
+    let verb = idle_verb(app.lang, elapsed.as_millis());
     let text = format!("✻ {verb} · {}", format_elapsed(elapsed));
     Line::from(Span::styled(
         text,
@@ -275,9 +275,20 @@ mod tests {
 
     #[test]
     fn idle_verb_is_deterministic_and_localized() {
+        // Тот же seed → тот же глагол (не мигает между кадрами).
         assert_eq!(idle_verb(Language::Ru, 7), idle_verb(Language::Ru, 7));
+        // Выбор реально варьируется по seed, а не залипает на одном слове.
+        let v0 = idle_verb(Language::Ru, 0);
+        assert!(
+            (0..5u128).any(|s| idle_verb(Language::Ru, s) != v0),
+            "разные seed дают разные глаголы"
+        );
+        // Наборы Ru и En не пересекаются.
         let en = ["Thought", "Pondered", "Cogitated", "Mused", "Reasoned"];
-        assert!(en.contains(&idle_verb(Language::En, 3)), "en verb");
+        let ru = ["Думал", "Размышлял", "Соображал", "Кумекал", "Прикидывал"];
+        let en_verb = idle_verb(Language::En, 3);
+        assert!(en.contains(&en_verb), "en verb из своего набора");
+        assert!(!ru.contains(&en_verb), "en не из ru-набора");
     }
 }
 
