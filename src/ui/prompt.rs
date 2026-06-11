@@ -6,8 +6,9 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let tick = current_effort_tick();
     let mut rendered = Vec::new();
 
-    // Верхняя полоска композера со встроенной у правого края плашкой названия чата.
-    rendered.push(prompt_top_rule_line(area.width, command_mode, tick, app));
+    // Плашка названия чата — отдельной строкой справа НАД верхней полоской.
+    rendered.push(chat_title_badge_line(area.width, app));
+    rendered.push(prompt_rule_line(area.width, command_mode, tick, app.theme));
     for (index, line) in lines.iter().enumerate() {
         let prefix = if index == 0 { "› " } else { "  " };
         rendered.push(Line::from(vec![
@@ -30,62 +31,45 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(rendered), area);
 
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, area.width);
-    // +1: над первой строкой ввода только верхняя полоска (плашка встроена в неё).
-    let cursor_y = area.y + 1 + (line_index as u16).min(area.height.saturating_sub(2));
+    // +2: над первой строкой ввода — строка плашки и верхняя полоска.
+    let cursor_y = area.y + 2 + (line_index as u16).min(area.height.saturating_sub(3));
     let cursor_x = area.x + 2 + col as u16;
     let max_x = area.x + area.width.saturating_sub(1);
     frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
 }
 
-/// Верхняя полоска композера со встроенной у правого края плашкой названия чата.
-fn prompt_top_rule_line(width: u16, active: bool, tick: u64, app: &App) -> Line<'static> {
-    top_rule_line_with_title(width, active, tick, app.theme, &app.chat_title)
+/// Отдельная строка НАД верхней полоской: плашка названия чата, прижата к правому
+/// краю (заливка акцентом, как «пузырь» реплики). Пустое название или слишком узкий
+/// терминал → пустая строка. Чистая по входам (width + theme + title) — тестируемо.
+fn chat_title_badge_line(width: u16, app: &App) -> Line<'static> {
+    badge_line(width, app.theme, &app.chat_title)
 }
 
-/// Горизонтальная линия со встроенной у правого края плашкой `title`. После
-/// плашки — короткий «хвост» из `─` до границы, слева — продолжение линии. Если
-/// названия нет или ширины не хватает, рисуется обычная полоска без плашки.
-/// Чистая функция (без `App`) — удобно покрыть тестом.
-fn top_rule_line_with_title(
-    width: u16,
-    active: bool,
-    tick: u64,
-    theme: Theme,
-    title: &str,
-) -> Line<'static> {
+fn badge_line(width: u16, theme: Theme, title: &str) -> Line<'static> {
     let total = width as usize;
     let title = title.trim();
+    // Отступ от правого края, чтобы плашка не липла к границе.
+    const RIGHT_PAD: usize = 1;
 
-    // Хвост из `─` справа от плашки и минимальный «островок» линии слева.
-    const RIGHT_TAIL: usize = 2;
-    const MIN_LEFT: usize = 2;
-
-    if title.is_empty() || total < MIN_LEFT + RIGHT_TAIL + 3 {
-        return prompt_rule_line(width, active, tick, theme);
+    if title.is_empty() || total < RIGHT_PAD + 4 {
+        return Line::from("");
     }
 
-    // Бюджет под текст: минус 2 внутренних пробела плашки, хвост и островок слева.
-    let title_room = total - (RIGHT_TAIL + MIN_LEFT + 2);
-    let title = truncate_chars(title, title_room);
+    // Бюджет текста: минус правый отступ и 2 внутренних пробела плашки.
+    let title = truncate_chars(title, total - (RIGHT_PAD + 2));
     let badge = format!(" {title} ");
-    let badge_len = badge.chars().count();
-    let left_len = total.saturating_sub(badge_len + RIGHT_TAIL);
+    let left_pad = total.saturating_sub(badge.chars().count() + RIGHT_PAD);
 
-    let mut spans = Vec::with_capacity(left_len + 1 + RIGHT_TAIL);
-    for index in 0..left_len {
-        spans.push(rule_span(index, active, tick, theme));
-    }
-    spans.push(Span::styled(
-        badge,
-        Style::default()
-            .fg(Color::Black)
-            .bg(theme.accent())
-            .add_modifier(Modifier::BOLD),
-    ));
-    for index in (left_len + badge_len)..total {
-        spans.push(rule_span(index, active, tick, theme));
-    }
-    Line::from(spans)
+    Line::from(vec![
+        Span::raw(" ".repeat(left_pad)),
+        Span::styled(
+            badge,
+            Style::default()
+                .fg(Color::Black)
+                .bg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
 }
 
 /// Один символ горизонтальной полоски для столбца `index`. В командном режиме
@@ -115,4 +99,37 @@ pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64, theme: Theme
         .map(|index| rule_span(index, active, tick, theme))
         .collect::<Vec<_>>();
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn badge_line_right_aligns_title_and_pads_left() {
+        let line = badge_line(20, Theme::Purple, "chat");
+        // Плашка несёт текст с внутренними пробелами.
+        let badge = line
+            .spans
+            .iter()
+            .find(|s| s.content.contains("chat"))
+            .expect("плашка есть");
+        assert_eq!(badge.content.as_ref(), " chat ");
+        // Прижата вправо: занятая ширина = total − правый отступ (1).
+        let used: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+        assert_eq!(used, 19, "плашка у правого края, 1 колонка отступа");
+        // Слева — пробелы-подложка.
+        assert!(line.spans[0].content.chars().all(|c| c == ' '));
+    }
+
+    #[test]
+    fn badge_line_is_empty_without_title_or_when_too_narrow() {
+        for (w, title) in [(20u16, ""), (3, "chat")] {
+            let line = badge_line(w, Theme::Purple, title);
+            assert!(
+                line.spans.iter().all(|s| s.content.trim().is_empty()),
+                "пустая строка при w={w}, title={title:?}"
+            );
+        }
+    }
 }
