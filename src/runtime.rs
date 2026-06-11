@@ -82,37 +82,60 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Приветственный блок для пустого старта — кладётся в ленту и живёт в нижнем
-/// регионе, пока не вытеснится новой историей. Также показывается после `/clear`.
+/// Приветственный блок (Claude-style: рамка со скруглёнными углами, акцентная «✻»).
+/// Кладётся в ленту при пустом старте и после `/clear`, уходит в скроллбэк по мере
+/// диалога. Стилизация рамки/«✻» — в `style_transcript_line` (детект по символам рамки).
 pub(crate) fn welcome_lines(app: &App) -> Vec<String> {
     let lang = app.lang;
-    vec![
-        lang.choose("✦ clave готов", "✦ clave ready").to_string(),
-        String::new(),
+    let cwd = app.resolved_work_dir().display().to_string();
+    let body = vec![
+        lang.choose("✻ Добро пожаловать в clave!", "✻ Welcome to clave!"),
+        "",
         lang.choose(
-            "Введи сообщение и Enter — прямой чат с моделью-агентом.",
-            "Type a message and press Enter — chat with the model as an agent.",
-        )
-        .to_string(),
-        lang.choose(
-            "/plan <задача> — двухагентная спека (architect + reviewer).",
-            "/plan <task> — two-agent spec (architect + reviewer).",
-        )
-        .to_string(),
-        lang.choose(
-            "/help · /chats · /settings · /effort — команды и настройки.",
-            "/help · /chats · /settings · /effort — commands and settings.",
-        )
-        .to_string(),
-        String::new(),
-        format!(
-            "{} {} · chat {} · effort {}",
-            lang.choose("Режим", "Mode"),
-            app.mode.as_str(),
-            app.direct_provider.as_str(),
-            app.effort_summary()
+            "Пиши сообщение — прямой чат с моделью-агентом.",
+            "Type a message — chat with the model as an agent.",
         ),
-    ]
+        lang.choose(
+            "/plan <задача> · /help · /chats · /settings",
+            "/plan <task> · /help · /chats · /settings",
+        ),
+        "",
+    ];
+    let mut body: Vec<String> = body.into_iter().map(str::to_string).collect();
+    body.push(format!("cwd: {cwd}"));
+    boxed(&body)
+}
+
+/// Оборачивает строки в рамку со скруглёнными углами. Ширина — по самой длинной
+/// строке. Первая строка («✻ …») — с отступом 1, остальные непустые — 3 (как Claude).
+fn boxed(body: &[String]) -> Vec<String> {
+    let indented: Vec<String> = body
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            if line.is_empty() {
+                String::new()
+            } else if index == 0 {
+                format!(" {line}")
+            } else {
+                format!("   {line}")
+            }
+        })
+        .collect();
+    let inner = indented
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    let mut out = Vec::with_capacity(indented.len() + 2);
+    out.push(format!("╭{}╮", "─".repeat(inner + 2)));
+    for line in &indented {
+        let pad = " ".repeat(inner - line.chars().count());
+        out.push(format!("│ {line}{pad} │"));
+    }
+    out.push(format!("╰{}╯", "─".repeat(inner + 2)));
+    out
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).

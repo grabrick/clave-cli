@@ -290,9 +290,46 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .fg(Color::Gray)
                 .add_modifier(Modifier::ITALIC),
         )
+    } else if line.starts_with('╭') || line.starts_with('╰') {
+        // Верх/низ рамки welcome-блока — приглушённым цветом.
+        Line::styled(line.to_string(), Style::default().fg(theme.accent_dim()))
+    } else if line.starts_with('│') && line.ends_with('│') {
+        // Содержимое welcome-рамки: боковины приглушены, «✻» — акцентом.
+        welcome_box_line(line, theme)
     } else {
         Line::from(inline_md_spans(line))
     }
+}
+
+/// Строка содержимого welcome-рамки: вертикальные боковины `│` приглушены, символ
+/// «✻» красится акцентом (как заголовок welcome в Claude), остальное — обычным.
+fn welcome_box_line(line: &str, theme: Theme) -> Line<'static> {
+    let dim = Style::default().fg(theme.accent_dim());
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() < 2 {
+        return Line::styled(line.to_string(), dim);
+    }
+    let inner: String = chars[1..chars.len() - 1].iter().collect();
+
+    let mut spans = vec![Span::styled("│".to_string(), dim)];
+    if let Some(pos) = inner.find('✻') {
+        let (before, rest) = inner.split_at(pos);
+        let after = &rest['✻'.len_utf8()..];
+        if !before.is_empty() {
+            spans.push(Span::raw(before.to_string()));
+        }
+        spans.push(Span::styled(
+            "✻".to_string(),
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(after.to_string()));
+    } else {
+        spans.push(Span::raw(inner));
+    }
+    spans.push(Span::styled("│".to_string(), dim));
+    Line::from(spans)
 }
 
 pub(crate) fn is_markdown_fence(line: &str) -> bool {
@@ -816,5 +853,29 @@ mod tests {
             .any(|row| row.links.iter().any(|l| l.url.contains("src/app.rs")));
         assert!(linked, "путь в ответе стал ссылкой через полный рендер");
         let _ = fs::remove_dir_all(&cwd);
+    }
+
+    #[test]
+    fn welcome_box_border_dim_and_star_accent() {
+        // Верх/низ рамки — приглушённым цветом.
+        let top = style_transcript_line("╭────╮", Language::Ru, Theme::Purple);
+        assert_eq!(top.style.fg, Some(Theme::Purple.accent_dim()), "рамка dim");
+
+        // Содержимое: боковины `│` dim, символ ✻ — акцентом.
+        let title = style_transcript_line("│ ✻ Welcome to clave!   │", Language::Ru, Theme::Purple);
+        assert_eq!(
+            title.spans.first().unwrap().style.fg,
+            Some(Theme::Purple.accent_dim()),
+            "левая боковина dim"
+        );
+        let star = title
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "✻")
+            .expect("✻ есть отдельным спаном");
+        assert_eq!(star.style.fg, Some(Theme::Purple.accent()), "✻ акцентом");
+        // Текст сохранён целиком.
+        let joined: String = title.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "│ ✻ Welcome to clave!   │");
     }
 }
