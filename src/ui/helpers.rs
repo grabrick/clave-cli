@@ -2,7 +2,8 @@ use super::*;
 
 pub(crate) fn composer_height(app: &App, width: u16) -> u16 {
     let lines = input_lines_wrapped(&app.input, width).len() as u16;
-    (lines + 3).clamp(4, 11)
+    // +2 служебные строки: верхняя полоска (со встроенной плашкой) и нижняя полоска.
+    (lines + 2).clamp(3, 10)
 }
 
 pub(crate) fn initial_transcript(_lang: Language) -> Vec<String> {

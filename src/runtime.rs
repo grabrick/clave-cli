@@ -40,9 +40,15 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     let _guard = TerminalGuard::new()?;
     let mut app = App::new();
-    if app.transcript.is_empty() {
-        // Пустой старт → приветственный блок прямо в ленту (в файл не пишется,
-        // т.к. не идёт через push_system; покажется в живом блоке).
+    // Welcome — при пустом старте ИЛИ когда в восстановленном чате нет реального
+    // диалога (ни одной реплики «◆ …», напр. после /clear осталась лишь системная
+    // строка): новое окно должно встречать приветствием, а не огрызком прошлого чата.
+    let has_conversation = app
+        .transcript
+        .iter()
+        .any(|line| line.trim_start().starts_with('◆'));
+    if !has_conversation {
+        // В файл не пишется (не через push_system) — живёт только в живом блоке.
         app.transcript = welcome_lines(&app);
     }
     let mut renderer = LiveRenderer::new();
@@ -76,37 +82,64 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Приветственный блок для пустого старта — кладётся в ленту и живёт в нижнем
-/// регионе, пока не вытеснится новой историей.
-fn welcome_lines(app: &App) -> Vec<String> {
+/// Приветственный блок (Claude-style): логотип слева + имя/модель/cwd справа, без
+/// рамок, и строка-подсказка. Кладётся в ленту при пустом старте и после `/clear`,
+/// уходит в скроллбэк по мере диалога. Строки помечены PUA-сентинелами
+/// (`WELCOME_*`), стилизуются в `style_transcript_line`.
+pub(crate) fn welcome_lines(app: &App) -> Vec<String> {
     let lang = app.lang;
+    let version = env!("CARGO_PKG_VERSION");
+    let cwd = abbreviate_home(&app.resolved_work_dir());
+    let model = format!(
+        "{} · chat {} · effort {}",
+        app.mode.as_str(),
+        app.direct_provider.as_str(),
+        app.effort_summary()
+    );
+    // Робот clave (нарисован пользователем, 16×16 → Unicode-полублоки), красится
+    // акцентом темы. Все строки одной ширины — чтобы инфо справа выровнялось.
+    let logo = [
+        "  ▄████████▄  ",
+        "  ██████████  ",
+        "▀████████████▀",
+        "  ▄▄▄▄▄▄▄▄▄▄  ",
+        "  ███▀  ▀███  ",
+        "      ▄▄      ",
+        "    █▀  ▀█    ",
+        "    ▀▄██▄▀    ",
+    ];
+    let hint = lang.choose(
+        "Пиши сообщение — прямой чат · /plan — спека · /help — все команды",
+        "Type a message — direct chat · /plan — spec · /help — all commands",
+    );
     vec![
-        lang.choose("✦ clave готов", "✦ clave ready").to_string(),
-        String::new(),
-        lang.choose(
-            "Введи сообщение и Enter — прямой чат с моделью-агентом.",
-            "Type a message and press Enter — chat with the model as an agent.",
-        )
-        .to_string(),
-        lang.choose(
-            "/plan <задача> — двухагентная спека (architect + reviewer).",
-            "/plan <task> — two-agent spec (architect + reviewer).",
-        )
-        .to_string(),
-        lang.choose(
-            "/help · /chats · /settings · /effort — команды и настройки.",
-            "/help · /chats · /settings · /effort — commands and settings.",
-        )
-        .to_string(),
-        String::new(),
+        // Инфо — вверху, у головы робота (строки 0-2); ниже — только логотип.
         format!(
-            "{} {} · chat {} · effort {}",
-            lang.choose("Режим", "Mode"),
-            app.mode.as_str(),
-            app.direct_provider.as_str(),
-            app.effort_summary()
+            "{WELCOME_NAME}{}{WELCOME_SEP}clave{WELCOME_SEP}v{version}",
+            logo[0]
         ),
+        format!("{WELCOME_INFO}{}{WELCOME_SEP}{model}", logo[1]),
+        format!("{WELCOME_INFO}{}{WELCOME_SEP}{cwd}", logo[2]),
+        format!("{WELCOME_INFO}{}", logo[3]),
+        format!("{WELCOME_INFO}{}", logo[4]),
+        format!("{WELCOME_INFO}{}", logo[5]),
+        format!("{WELCOME_INFO}{}", logo[6]),
+        format!("{WELCOME_INFO}{}", logo[7]),
+        String::new(),
+        format!("{WELCOME_HINT}{hint}"),
     ]
+}
+
+/// Сокращает `$HOME` до `~` в начале пути (как cwd в welcome у Claude).
+fn abbreviate_home(path: &Path) -> String {
+    let shown = path.display().to_string();
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => shown
+            .strip_prefix(&home)
+            .map(|rest| format!("~{rest}"))
+            .unwrap_or(shown),
+        _ => shown,
+    }
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).

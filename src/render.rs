@@ -257,21 +257,19 @@ impl LiveRenderer {
 }
 
 pub(crate) fn terminal_window_title(app: &App) -> String {
-    format_terminal_window_title(&app.resolved_work_dir(), &app.chat_title)
+    terminal_title_for(app.chat_title_custom, &app.chat_title)
 }
 
-pub(crate) fn format_terminal_window_title(work_dir: &Path, chat_title: &str) -> String {
-    format!(
-        "{} - {} - {}",
-        sanitize_terminal_title_fragment(&terminal_workdir_label(work_dir)),
-        sanitize_terminal_title_fragment(chat_title),
-        APP_COMMAND
-    )
-}
-
-/// Полный путь до рабочей директории проекта — первый сегмент заголовка терминала.
-fn terminal_workdir_label(path: &Path) -> String {
-    path.display().to_string()
+/// Заголовок, который СТАВИТ clave: только имя ЯВНО названного чата (/name, /rename).
+/// Путь, имя процесса и размер терминал показывает сам — clave их НЕ дублирует (иначе
+/// получалось "Macintosh HD — / — clave — clave — 133x24"). Безымянный чат → пустая
+/// строка: терминал рисует свой дефолт, clave заголовок не трогает.
+pub(crate) fn terminal_title_for(custom: bool, chat_title: &str) -> String {
+    if custom && !chat_title.trim().is_empty() {
+        sanitize_terminal_title_fragment(chat_title)
+    } else {
+        String::new()
+    }
 }
 
 fn sanitize_terminal_title_fragment(text: &str) -> String {
@@ -393,10 +391,10 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер идёт после воздуха и верхнего слота, +2 на линейку и
-    // плашку заголовка над вводом.
+    // Курсор ввода: композер идёт после воздуха и верхнего слота, +1 на верхнюю
+    // линейку композера (плашка названия встроена в неё, отдельной строки нет).
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (gap_top + top_h + 2 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (gap_top + top_h + 1 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
@@ -594,22 +592,20 @@ mod tests {
     }
 
     #[test]
-    fn terminal_title_uses_cwd_chat_and_app_name() {
-        assert_eq!(
-            format_terminal_window_title(Path::new("/"), "clave-chat"),
-            "/ - clave-chat - clave"
-        );
-        assert_eq!(
-            format_terminal_window_title(Path::new("/tmp/project"), "первый промт"),
-            "/tmp/project - первый промт - clave"
-        );
+    fn terminal_title_only_set_for_named_chats() {
+        // Назван явно → ставим ТОЛЬКО имя (путь/процесс/размер рисует терминал).
+        assert_eq!(terminal_title_for(true, "myproject"), "myproject");
+        // Безымянный → пусто: clave заголовок не трогает, нет дублирования пути/clave.
+        assert_eq!(terminal_title_for(false, "chat-123"), "");
+        // Пустое имя даже при custom → пусто.
+        assert_eq!(terminal_title_for(true, "  "), "");
     }
 
     #[test]
     fn terminal_title_strips_control_sequences() {
         assert_eq!(
-            format_terminal_window_title(Path::new("/"), "ok\u{1b}]0;pwn\u{7}\rtitle"),
-            "/ - ok]0;pwntitle - clave"
+            terminal_title_for(true, "ok\u{1b}]0;pwn\u{7}\rtitle"),
+            "ok]0;pwntitle"
         );
     }
 }
