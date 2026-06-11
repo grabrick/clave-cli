@@ -37,9 +37,15 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
 }
 
-/// Верхняя полоска композера со встроенной у правого края плашкой названия чата.
+/// Верхняя полоска композера. Плашка названия — ТОЛЬКО для явно названного чата
+/// (/name, /rename); у безымянного (chat_id по умолчанию) рисуется чистая полоска.
 fn prompt_top_rule_line(width: u16, active: bool, tick: u64, app: &App) -> Line<'static> {
-    top_rule_line_with_title(width, active, tick, app.theme, &app.chat_title)
+    let title = if app.chat_title_custom {
+        app.chat_title.as_str()
+    } else {
+        ""
+    };
+    top_rule_line_with_title(width, active, tick, app.theme, title)
 }
 
 /// Горизонтальная линия со встроенной у правого края плашкой `title`. После

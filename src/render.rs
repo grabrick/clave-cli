@@ -257,16 +257,24 @@ impl LiveRenderer {
 }
 
 pub(crate) fn terminal_window_title(app: &App) -> String {
-    format_terminal_window_title(&app.resolved_work_dir(), &app.chat_title)
+    // Имя чата в заголовке — ТОЛЬКО если задано явно (/name, /rename), не авто.
+    let chat = app.chat_title_custom.then(|| app.chat_title.as_str());
+    format_terminal_window_title(&app.resolved_work_dir(), chat)
 }
 
-pub(crate) fn format_terminal_window_title(work_dir: &Path, chat_title: &str) -> String {
-    format!(
-        "{} - {} - {}",
-        sanitize_terminal_title_fragment(&terminal_workdir_label(work_dir)),
-        sanitize_terminal_title_fragment(chat_title),
-        APP_COMMAND
-    )
+pub(crate) fn format_terminal_window_title(work_dir: &Path, chat_title: Option<&str>) -> String {
+    let dir = sanitize_terminal_title_fragment(&terminal_workdir_label(work_dir));
+    match chat_title.map(str::trim).filter(|title| !title.is_empty()) {
+        // Назван явно: путь — имя — clave.
+        Some(title) => format!(
+            "{} - {} - {}",
+            dir,
+            sanitize_terminal_title_fragment(title),
+            APP_COMMAND
+        ),
+        // Безымянный: путь — clave (без авто-имени).
+        None => format!("{dir} - {APP_COMMAND}"),
+    }
 }
 
 /// Полный путь до рабочей директории проекта — первый сегмент заголовка терминала.
@@ -595,20 +603,26 @@ mod tests {
 
     #[test]
     fn terminal_title_uses_cwd_chat_and_app_name() {
+        // Названный чат: путь — имя — clave.
         assert_eq!(
-            format_terminal_window_title(Path::new("/"), "clave-chat"),
+            format_terminal_window_title(Path::new("/"), Some("clave-chat")),
             "/ - clave-chat - clave"
         );
+        // Безымянный (None или пусто): путь — clave, без авто-имени.
         assert_eq!(
-            format_terminal_window_title(Path::new("/tmp/project"), "первый промт"),
-            "/tmp/project - первый промт - clave"
+            format_terminal_window_title(Path::new("/tmp/project"), None),
+            "/tmp/project - clave"
+        );
+        assert_eq!(
+            format_terminal_window_title(Path::new("/"), Some("   ")),
+            "/ - clave"
         );
     }
 
     #[test]
     fn terminal_title_strips_control_sequences() {
         assert_eq!(
-            format_terminal_window_title(Path::new("/"), "ok\u{1b}]0;pwn\u{7}\rtitle"),
+            format_terminal_window_title(Path::new("/"), Some("ok\u{1b}]0;pwn\u{7}\rtitle")),
             "/ - ok]0;pwntitle - clave"
         );
     }
