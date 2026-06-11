@@ -411,10 +411,10 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер идёт после воздуха и верхнего слота, +2 на строки над
-    // вводом — плашку названия и верхнюю линейку композера.
+    // Курсор ввода: композер идёт после воздуха и верхнего слота, +1 на верхнюю
+    // линейку композера (плашка названия встроена в неё, отдельной строки нет).
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (gap_top + top_h + 2 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (gap_top + top_h + 1 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
