@@ -40,6 +40,29 @@ impl App {
     }
 
     pub(crate) fn start_new_chat(&mut self) {
+        self.reset_to_new_chat();
+        self.push_command_result(format!(
+            "{} {}",
+            self.lang.choose("Новый чат:", "New chat:"),
+            self.chat_id
+        ));
+    }
+
+    /// `/clear` как в Claude: удаляет ТЕКУЩИЙ (именованный) чат целиком и начинает
+    /// свежий пустой контекст. Имя хранится в самом файле чата, поэтому remove_file
+    /// уносит и его. Удаляем ДО создания нового (reset меняет chat_path).
+    pub(crate) fn clear_current_chat(&mut self) {
+        let _ = fs::remove_file(&self.chat_path);
+        self.reset_to_new_chat();
+        self.push_command_result(self.lang.choose(
+            "Контекст очищен, чат удалён.",
+            "Context cleared, chat deleted.",
+        ));
+    }
+
+    /// Сброс к свежему пустому чату: новый id, имя по умолчанию, пустая лента, чистый
+    /// экран и сброшенный лоадер. Без сообщения — его шлёт вызывающий.
+    fn reset_to_new_chat(&mut self) {
         self.chat_id = new_chat_id();
         self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
         self.chat_title = self.chat_id.clone();
@@ -47,6 +70,7 @@ impl App {
         self.transcript.clear();
         self.reset_scrollback();
         self.last_run = None;
+        self.last_run_duration = None;
         self.pending_plan = None;
         self.plan_flow = PlanFlow::None;
         self.status = self.lang.choose("новый чат", "new chat").to_string();
@@ -63,11 +87,6 @@ impl App {
         }
 
         self.save_current_config(true);
-        self.push_command_result(format!(
-            "{} {}",
-            self.lang.choose("Новый чат:", "New chat:"),
-            self.chat_id
-        ));
     }
 
     pub(crate) fn resume_chat(&mut self, chat_id: &str) {

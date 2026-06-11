@@ -320,9 +320,8 @@ impl App {
                 if rest.trim() == "history" {
                     self.clear_all_chats();
                 } else {
-                    self.transcript.clear();
-                    self.reset_scrollback();
-                    self.push_command_result(self.lang.choose("Лента очищена.", "Transcript cleared."));
+                    // Как /clear в Claude: контекст И текущий именованный чат уходят.
+                    self.clear_current_chat();
                 }
             }
             "/quit" | "/exit" => self.should_quit = true,
