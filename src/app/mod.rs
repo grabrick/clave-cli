@@ -40,6 +40,8 @@ pub(crate) struct App {
     pub(crate) chats_dir: PathBuf,
     pub(crate) chat_id: String,
     pub(crate) chat_path: PathBuf,
+    pub(crate) chat_title: String,
+    pub(crate) chat_title_custom: bool,
     pub(crate) onboarding: Option<Onboarding>,
     pub(crate) pending_external: Option<ExternalCommand>,
     pub(crate) input: String,
@@ -148,6 +150,8 @@ impl App {
 
         let (chat_id, chat_path, transcript) =
             restore_or_create_chat(&chats_dir, config.last_chat_id.as_deref(), config.lang);
+        let chat_title_custom = read_chat_title(&chat_path).is_some();
+        let chat_title = chat_display_title(&chat_path, &transcript, &chat_id);
         let history = load_history(&history_path).unwrap_or_default();
         let last_run = find_last_run(&transcript);
 
@@ -165,6 +169,8 @@ impl App {
             chats_dir,
             chat_id,
             chat_path,
+            chat_title,
+            chat_title_custom,
             onboarding,
             pending_external: None,
             input: String::new(),

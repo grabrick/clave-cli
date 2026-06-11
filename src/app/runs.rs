@@ -67,6 +67,10 @@ impl App {
             return;
         }
 
+        if let Some(title) = display.strip_prefix("◆ ") {
+            self.set_chat_title_from_prompt_if_needed(title);
+        }
+
         // Проверку логина НЕ делаем здесь синхронно (она спавнит CLI-подпроцессы и
         // морозит UI на пару секунд) — она ушла в воркер ниже. Сообщение и лоадер
         // показываются мгновенно.
@@ -192,6 +196,8 @@ impl App {
             }
         };
         let (cancel_tx, cancel_rx) = mpsc::channel();
+
+        self.set_chat_title_from_prompt_if_needed(&task);
 
         self.running = true;
         self.run_started_at = Some(Instant::now());

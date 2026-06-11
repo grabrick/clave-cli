@@ -100,6 +100,14 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     truncated
 }
 
+pub(crate) fn first_prompt_title(lines: &[String]) -> Option<String> {
+    lines
+        .iter()
+        .find_map(|line| line.strip_prefix("◆ ").map(str::trim))
+        .filter(|line| !line.is_empty())
+        .map(|line| truncate_chars(line, 72))
+}
+
 pub(crate) fn clave_state_dir() -> PathBuf {
     if let Ok(path) = env::var("CLAVE_HOME") {
         return PathBuf::from(path);
@@ -478,20 +486,7 @@ pub(crate) fn chat_summary(path: &Path) -> Option<ChatSummary> {
         .and_then(|metadata| metadata.modified())
         .unwrap_or(UNIX_EPOCH);
     let lines = load_chat_transcript(path).ok()?;
-    let title = match read_chat_title(path) {
-        Some(custom) => truncate_chars(&custom, 72),
-        None => lines
-            .iter()
-            .find_map(|line| line.strip_prefix("◆ ").map(str::trim))
-            .or_else(|| {
-                lines
-                    .iter()
-                    .find(|line| !line.trim().is_empty())
-                    .map(String::as_str)
-            })
-            .map(|line| truncate_chars(line, 72))
-            .unwrap_or_else(|| "empty chat".to_string()),
-    };
+    let title = chat_display_title(path, &lines, "empty chat");
 
     Some(ChatSummary {
         id,
@@ -499,6 +494,19 @@ pub(crate) fn chat_summary(path: &Path) -> Option<ChatSummary> {
         lines: lines.len(),
         modified,
     })
+}
+
+pub(crate) fn chat_display_title(path: &Path, lines: &[String], fallback: &str) -> String {
+    read_chat_title(path)
+        .map(|custom| truncate_chars(custom.trim(), 72))
+        .or_else(|| first_prompt_title(lines))
+        .or_else(|| {
+            lines
+                .iter()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| truncate_chars(line.trim(), 72))
+        })
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 /// Прочитать кастомный заголовок чата из header файла (строка `title=`).
@@ -659,6 +667,27 @@ mod tests {
         assert_eq!(
             load_chat_transcript(&path).unwrap(),
             vec!["◆ из контента".to_string()]
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chat_display_title_prefers_first_prompt_before_generic_lines() {
+        let dir = env::temp_dir().join(format!("clave-title-fallback-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let id = "chat-title-fallback";
+        let path = chat_path_for_id(&dir, id);
+        let lines = vec![
+            "✦ clave готов".to_string(),
+            "◆ Первый реальный промт".to_string(),
+        ];
+        save_chat_transcript(&path, id, &lines).expect("save");
+
+        assert_eq!(
+            chat_display_title(&path, &lines, id),
+            "Первый реальный промт"
         );
 
         let _ = fs::remove_dir_all(&dir);

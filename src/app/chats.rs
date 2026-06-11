@@ -1,6 +1,22 @@
 use super::*;
 
 impl App {
+    pub(crate) fn refresh_current_chat_title(&mut self) {
+        self.chat_title_custom = read_chat_title(&self.chat_path).is_some();
+        self.chat_title = chat_display_title(&self.chat_path, &self.transcript, &self.chat_id);
+    }
+
+    pub(crate) fn set_chat_title_from_prompt_if_needed(&mut self, prompt: &str) {
+        if self.chat_title_custom || first_prompt_title(&self.transcript).is_some() {
+            return;
+        }
+
+        let title = truncate_chars(prompt.trim(), 72);
+        if !title.is_empty() {
+            self.chat_title = title;
+        }
+    }
+
     pub(crate) fn remember_history_entry(&mut self, line: &str) {
         self.history.retain(|entry| entry != line);
         self.history.push(line.to_string());
@@ -26,6 +42,8 @@ impl App {
     pub(crate) fn start_new_chat(&mut self) {
         self.chat_id = new_chat_id();
         self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
+        self.chat_title = self.chat_id.clone();
+        self.chat_title_custom = false;
         self.transcript.clear();
         self.reset_scrollback();
         self.last_run = None;
@@ -71,6 +89,7 @@ impl App {
                 self.chat_id = chat_id;
                 self.chat_path = path;
                 self.transcript = lines;
+                self.refresh_current_chat_title();
                 self.reset_scrollback();
                 self.last_run = find_last_run(&self.transcript);
                 self.pending_plan = None;
@@ -165,11 +184,15 @@ impl App {
             return;
         }
         match set_chat_title(&self.chat_path, &self.chat_id, title) {
-            Ok(()) => self.push_command_result(format!(
-                "{} {}",
-                self.lang.choose("Чат назван:", "Chat named:"),
-                title
-            )),
+            Ok(()) => {
+                self.chat_title = truncate_chars(title, 72);
+                self.chat_title_custom = true;
+                self.push_command_result(format!(
+                    "{} {}",
+                    self.lang.choose("Чат назван:", "Chat named:"),
+                    title
+                ));
+            }
             Err(err) => self.push_command_result(format!(
                 "{} {}",
                 self.lang

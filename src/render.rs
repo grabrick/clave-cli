@@ -8,7 +8,7 @@ use crossterm::{
         Attribute as CtAttr, Color as CtColor, Print, ResetColor, SetAttribute, SetBackgroundColor,
         SetForegroundColor,
     },
-    terminal::{Clear, ClearType},
+    terminal::{Clear, ClearType, SetTitle},
 };
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
@@ -30,6 +30,8 @@ pub(crate) struct LiveRenderer {
     prev_lines: Vec<Line<'static>>,
     /// Позиция курсора ввода прошлого кадра (строка, столбец) внутри блока.
     prev_cursor: (u16, u16),
+    /// Последний выставленный title окна терминала.
+    prev_terminal_title: String,
 }
 
 impl LiveRenderer {
@@ -40,6 +42,7 @@ impl LiveRenderer {
             cursor_above: 0,
             prev_lines: Vec::new(),
             prev_cursor: (0, 0),
+            prev_terminal_title: String::new(),
         }
     }
 
@@ -55,6 +58,8 @@ impl LiveRenderer {
     /// лишь изменившиеся (цвет/текст), не трогая остальные → нет мерцания футера, а
     /// анимация появления палитры (меняется цвет) проигрывается.
     pub(crate) fn render(&mut self, app: &mut App, width: u16, full_h: u16) -> io::Result<()> {
+        self.sync_terminal_title(app)?;
+
         // Полная очистка терминала по запросу (/clear, /new, /resume): стираем
         // экран И нативный скроллбэк, иначе старая напечатанная история остаётся.
         if app.pending_clear_screen {
@@ -186,6 +191,16 @@ impl LiveRenderer {
         Ok(())
     }
 
+    fn sync_terminal_title(&mut self, app: &App) -> io::Result<()> {
+        let title = terminal_window_title(app);
+        if title == self.prev_terminal_title {
+            return Ok(());
+        }
+        execute!(io::stdout(), SetTitle(&title))?;
+        self.prev_terminal_title = title;
+        Ok(())
+    }
+
     /// Перед внешней командой: СТИРАЕТ живой блок целиком, оставляя на экране
     /// историю диалога. Вывод команды печатается на месте блока, а блок потом
     /// перерисуется (invalidate). Для выхода из приложения см. `clear_for_exit`.
@@ -248,6 +263,37 @@ impl LiveRenderer {
         self.cursor_above = 0;
         self.prev_lines.clear();
         Ok(())
+    }
+}
+
+pub(crate) fn terminal_window_title(app: &App) -> String {
+    format_terminal_window_title(&app.resolved_work_dir(), &app.chat_title)
+}
+
+pub(crate) fn format_terminal_window_title(work_dir: &Path, chat_title: &str) -> String {
+    format!(
+        "{} - {} - {}",
+        sanitize_terminal_title_fragment(&terminal_workdir_label(work_dir)),
+        sanitize_terminal_title_fragment(chat_title),
+        APP_COMMAND
+    )
+}
+
+/// Полный путь до рабочей директории проекта — первый сегмент заголовка терминала.
+fn terminal_workdir_label(path: &Path) -> String {
+    path.display().to_string()
+}
+
+fn sanitize_terminal_title_fragment(text: &str) -> String {
+    let cleaned = text
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .collect::<String>();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        APP_COMMAND.to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -357,9 +403,10 @@ fn build_dynamic(app: &App, width: u16, full_h: u16) -> (Vec<Line<'static>>, u16
         .map(|completed| buffer_to_lines(completed.buffer))
         .unwrap_or_default();
 
-    // Курсор ввода: композер идёт после воздуха и верхнего слота, +1 на линейку рамки.
+    // Курсор ввода: композер идёт после воздуха и верхнего слота, +2 на линейку и
+    // плашку заголовка над вводом.
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, width);
-    let cur_row = (gap_top + top_h + 1 + line_index as u16).min(height.saturating_sub(1));
+    let cur_row = (gap_top + top_h + 2 + line_index as u16).min(height.saturating_sub(1));
     let cur_col = (2 + col as u16).min(width.saturating_sub(1));
     (lines, cur_row, cur_col)
 }
@@ -498,5 +545,25 @@ mod tests {
             std::borrow::Cow::Borrowed(_)
         ));
         assert_eq!(sanitize_terminal_text(safe), safe);
+    }
+
+    #[test]
+    fn terminal_title_uses_cwd_chat_and_app_name() {
+        assert_eq!(
+            format_terminal_window_title(Path::new("/"), "clave-chat"),
+            "/ - clave-chat - clave"
+        );
+        assert_eq!(
+            format_terminal_window_title(Path::new("/tmp/project"), "первый промт"),
+            "/tmp/project - первый промт - clave"
+        );
+    }
+
+    #[test]
+    fn terminal_title_strips_control_sequences() {
+        assert_eq!(
+            format_terminal_window_title(Path::new("/"), "ok\u{1b}]0;pwn\u{7}\rtitle"),
+            "/ - ok]0;pwntitle - clave"
+        );
     }
 }

@@ -6,6 +6,7 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let tick = current_effort_tick();
     let mut rendered = Vec::new();
 
+    rendered.push(chat_title_label_line(area.width, app));
     rendered.push(prompt_rule_line(area.width, command_mode, tick, app.theme));
     for (index, line) in lines.iter().enumerate() {
         let prefix = if index == 0 { "› " } else { "  " };
@@ -29,10 +30,32 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(rendered), area);
 
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, area.width);
-    let cursor_y = area.y + 1 + (line_index as u16).min(area.height.saturating_sub(2));
+    let cursor_y = area.y + 2 + (line_index as u16).min(area.height.saturating_sub(3));
     let cursor_x = area.x + 2 + col as u16;
     let max_x = area.x + area.width.saturating_sub(1);
     frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
+}
+
+/// Плашка с названием чата: отдельная строка над верхней полоской композера,
+/// прижатая к правому краю (с отступом в 1 символ от края).
+fn chat_title_label_line(width: u16, app: &App) -> Line<'static> {
+    let width = width as usize;
+    // Резерв: 2 внутренних пробела плашки + 1 символ отступа справа.
+    let title_room = width.saturating_sub(3);
+    let title = truncate_chars(&app.chat_title, title_room);
+    let badge = format!(" {title} ");
+    let left_pad = width.saturating_sub(badge.chars().count() + 1);
+    Line::from(vec![
+        Span::raw(" ".repeat(left_pad)),
+        Span::styled(
+            badge,
+            Style::default()
+                .fg(Color::Black)
+                .bg(app.theme.accent())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+    ])
 }
 
 pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64, theme: Theme) -> Line<'static> {

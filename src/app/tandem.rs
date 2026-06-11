@@ -31,6 +31,8 @@ impl App {
         let task_run = task.clone();
         let (cancel_tx, cancel_rx) = mpsc::channel();
 
+        self.set_chat_title_from_prompt_if_needed(&task);
+
         self.running = true;
         self.run_started_at = Some(Instant::now());
         self.last_run_duration = None;

@@ -644,6 +644,8 @@ impl App {
         self.chat_id = new_chat_id();
         self.chat_path = chat_path_for_id(&self.chats_dir, &self.chat_id);
         self.transcript = transcript;
+        self.chat_title_custom = false;
+        self.chat_title = chat_display_title(&self.chat_path, &self.transcript, &self.chat_id);
         self.last_run = find_last_run(&self.transcript);
 
         match save_chat_transcript(&self.chat_path, &self.chat_id, &self.transcript) {
