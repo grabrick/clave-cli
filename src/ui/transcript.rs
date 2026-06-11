@@ -290,46 +290,50 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .fg(Color::Gray)
                 .add_modifier(Modifier::ITALIC),
         )
-    } else if line.starts_with('╭') || line.starts_with('╰') {
-        // Верх/низ рамки welcome-блока — приглушённым цветом.
-        Line::styled(line.to_string(), Style::default().fg(theme.accent_dim()))
-    } else if line.starts_with('│') && line.ends_with('│') {
-        // Содержимое welcome-рамки: боковины приглушены, «✻» — акцентом.
-        welcome_box_line(line, theme)
+    } else if let Some(rest) = line.strip_prefix(WELCOME_NAME) {
+        welcome_name_line(rest, theme)
+    } else if let Some(rest) = line.strip_prefix(WELCOME_INFO) {
+        welcome_info_line(rest, theme)
+    } else if let Some(rest) = line.strip_prefix(WELCOME_HINT) {
+        Line::styled(format!("  {rest}"), Style::default().fg(Color::Gray))
     } else {
         Line::from(inline_md_spans(line))
     }
 }
 
-/// Строка содержимого welcome-рамки: вертикальные боковины `│` приглушены, символ
-/// «✻» красится акцентом (как заголовок welcome в Claude), остальное — обычным.
-fn welcome_box_line(line: &str, theme: Theme) -> Line<'static> {
-    let dim = Style::default().fg(theme.accent_dim());
-    let chars: Vec<char> = line.chars().collect();
-    if chars.len() < 2 {
-        return Line::styled(line.to_string(), dim);
-    }
-    let inner: String = chars[1..chars.len() - 1].iter().collect();
+// ── Welcome-блок (Claude-style: логотип слева + инфо справа, без рамок) ──────────
+// Строки welcome помечены PUA-сентинелами (переживают санитайзинг, не встречаются в
+// обычном контенте). `welcome_lines` (runtime.rs) их кодирует, функции ниже стилизуют.
+pub(crate) const WELCOME_NAME: char = '\u{E010}'; // логотип | имя | версия
+pub(crate) const WELCOME_INFO: char = '\u{E013}'; // логотип | текст (модель/cwd)
+pub(crate) const WELCOME_HINT: char = '\u{E014}'; // строка-подсказка
+pub(crate) const WELCOME_SEP: char = '\u{E011}'; // разделитель сегментов
 
-    let mut spans = vec![Span::styled("│".to_string(), dim)];
-    if let Some(pos) = inner.find('✻') {
-        let (before, rest) = inner.split_at(pos);
-        let after = &rest['✻'.len_utf8()..];
-        if !before.is_empty() {
-            spans.push(Span::raw(before.to_string()));
-        }
-        spans.push(Span::styled(
-            "✻".to_string(),
+/// Строка имени welcome: логотип акцентом, «clave» — белым жирным, версия — серым.
+fn welcome_name_line(rest: &str, theme: Theme) -> Line<'static> {
+    let mut parts = rest.split(WELCOME_SEP);
+    let logo = parts.next().unwrap_or("").to_string();
+    let name = parts.next().unwrap_or("").to_string();
+    let version = parts.next().unwrap_or("").to_string();
+    Line::from(vec![
+        Span::styled(logo, Style::default().fg(theme.accent())),
+        Span::styled(
+            format!("  {name}"),
             Style::default()
-                .fg(theme.accent())
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(after.to_string()));
-    } else {
-        spans.push(Span::raw(inner));
-    }
-    spans.push(Span::styled("│".to_string(), dim));
-    Line::from(spans)
+        ),
+        Span::styled(format!("  {version}"), Style::default().fg(Color::Gray)),
+    ])
+}
+
+/// Строка инфо welcome: логотип акцентом, текст (модель/cwd) — серым.
+fn welcome_info_line(rest: &str, theme: Theme) -> Line<'static> {
+    let (logo, info) = rest.split_once(WELCOME_SEP).unwrap_or(("", rest));
+    Line::from(vec![
+        Span::styled(logo.to_string(), Style::default().fg(theme.accent())),
+        Span::styled(format!("  {info}"), Style::default().fg(Color::Gray)),
+    ])
 }
 
 pub(crate) fn is_markdown_fence(line: &str) -> bool {
@@ -856,26 +860,63 @@ mod tests {
     }
 
     #[test]
-    fn welcome_box_border_dim_and_star_accent() {
-        // Верх/низ рамки — приглушённым цветом.
-        let top = style_transcript_line("╭────╮", Language::Ru, Theme::Purple);
-        assert_eq!(top.style.fg, Some(Theme::Purple.accent_dim()), "рамка dim");
-
-        // Содержимое: боковины `│` dim, символ ✻ — акцентом.
-        let title = style_transcript_line("│ ✻ Welcome to clave!   │", Language::Ru, Theme::Purple);
-        assert_eq!(
-            title.spans.first().unwrap().style.fg,
-            Some(Theme::Purple.accent_dim()),
-            "левая боковина dim"
-        );
-        let star = title
+    fn welcome_name_line_logo_accent_name_bold_version_gray() {
+        // Сентинелы кодируют: логотип | имя | версия.
+        let raw = format!("{WELCOME_NAME}LOGO{WELCOME_SEP}clave{WELCOME_SEP}v0.1.2");
+        let line = style_transcript_line(&raw, Language::Ru, Theme::Purple);
+        // Логотип — акцентом.
+        let logo = line.spans.first().expect("логотип-спан");
+        assert_eq!(logo.content.as_ref(), "LOGO");
+        assert_eq!(logo.style.fg, Some(Theme::Purple.accent()));
+        // Имя — белым жирным.
+        let name = line
             .spans
             .iter()
-            .find(|s| s.content.as_ref() == "✻")
-            .expect("✻ есть отдельным спаном");
-        assert_eq!(star.style.fg, Some(Theme::Purple.accent()), "✻ акцентом");
-        // Текст сохранён целиком.
-        let joined: String = title.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert_eq!(joined, "│ ✻ Welcome to clave!   │");
+            .find(|s| s.content.contains("clave"))
+            .expect("имя");
+        assert_eq!(name.style.fg, Some(Color::White));
+        assert!(name.style.add_modifier.contains(Modifier::BOLD));
+        // Версия — серым; сентинелы не просочились в текст.
+        let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "LOGO  clave  v0.1.2");
+        assert!(!joined.contains(WELCOME_SEP) && !joined.contains(WELCOME_NAME));
+    }
+
+    #[test]
+    fn welcome_info_line_logo_accent_text_gray() {
+        let raw = format!("{WELCOME_INFO}LOGO{WELCOME_SEP}~/proj");
+        let line = style_transcript_line(&raw, Language::Ru, Theme::Purple);
+        assert_eq!(line.spans[0].content.as_ref(), "LOGO");
+        assert_eq!(line.spans[0].style.fg, Some(Theme::Purple.accent()));
+        let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(joined, "LOGO  ~/proj");
+    }
+
+    #[test]
+    fn welcome_renders_through_full_history_path() {
+        // Сквозной путь (wrap + стилизация + attach_links): «clave» и логотип
+        // печатаются, сентинелы вычищены.
+        let line = format!("{WELCOME_NAME}▗▄▄▖{WELCOME_SEP}clave{WELCOME_SEP}v0.1.2");
+        let mut state = TranscriptRenderState::default();
+        let rich = history_rich_render(
+            &line,
+            Language::Ru,
+            80,
+            Theme::Purple,
+            &mut state,
+            PathTarget::Off,
+            Path::new("/"),
+        );
+        let text: String = rich
+            .iter()
+            .flat_map(|row| row.line.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(text.contains("clave"), "welcome печатает 'clave': {text:?}");
+        assert!(text.contains("▗▄▄▖"), "логотип на месте: {text:?}");
+        assert!(
+            !text.contains(WELCOME_NAME) && !text.contains(WELCOME_SEP),
+            "сентинелы вычищены: {text:?}"
+        );
     }
 }

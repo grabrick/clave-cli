@@ -82,60 +82,48 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Приветственный блок (Claude-style: рамка со скруглёнными углами, акцентная «✻»).
-/// Кладётся в ленту при пустом старте и после `/clear`, уходит в скроллбэк по мере
-/// диалога. Стилизация рамки/«✻» — в `style_transcript_line` (детект по символам рамки).
+/// Приветственный блок (Claude-style): логотип слева + имя/модель/cwd справа, без
+/// рамок, и строка-подсказка. Кладётся в ленту при пустом старте и после `/clear`,
+/// уходит в скроллбэк по мере диалога. Строки помечены PUA-сентинелами
+/// (`WELCOME_*`), стилизуются в `style_transcript_line`.
 pub(crate) fn welcome_lines(app: &App) -> Vec<String> {
     let lang = app.lang;
-    let cwd = app.resolved_work_dir().display().to_string();
-    let body = vec![
-        lang.choose("✻ Добро пожаловать в clave!", "✻ Welcome to clave!"),
-        "",
-        lang.choose(
-            "Пиши сообщение — прямой чат с моделью-агентом.",
-            "Type a message — chat with the model as an agent.",
+    let version = env!("CARGO_PKG_VERSION");
+    let cwd = abbreviate_home(&app.resolved_work_dir());
+    let model = format!(
+        "{} · chat {} · effort {}",
+        app.mode.as_str(),
+        app.direct_provider.as_str(),
+        app.effort_summary()
+    );
+    // Трёхстрочный логотип clave (рожица), красится акцентом.
+    let logo = ["▗▄▄▖", "▐••▌", "▝▀▀▘"];
+    let hint = lang.choose(
+        "Пиши сообщение — прямой чат · /plan — спека · /help — все команды",
+        "Type a message — direct chat · /plan — spec · /help — all commands",
+    );
+    vec![
+        format!(
+            "{WELCOME_NAME}{}{WELCOME_SEP}clave{WELCOME_SEP}v{version}",
+            logo[0]
         ),
-        lang.choose(
-            "/plan <задача> · /help · /chats · /settings",
-            "/plan <task> · /help · /chats · /settings",
-        ),
-        "",
-    ];
-    let mut body: Vec<String> = body.into_iter().map(str::to_string).collect();
-    body.push(format!("cwd: {cwd}"));
-    boxed(&body)
+        format!("{WELCOME_INFO}{}{WELCOME_SEP}{model}", logo[1]),
+        format!("{WELCOME_INFO}{}{WELCOME_SEP}{cwd}", logo[2]),
+        String::new(),
+        format!("{WELCOME_HINT}{hint}"),
+    ]
 }
 
-/// Оборачивает строки в рамку со скруглёнными углами. Ширина — по самой длинной
-/// строке. Первая строка («✻ …») — с отступом 1, остальные непустые — 3 (как Claude).
-fn boxed(body: &[String]) -> Vec<String> {
-    let indented: Vec<String> = body
-        .iter()
-        .enumerate()
-        .map(|(index, line)| {
-            if line.is_empty() {
-                String::new()
-            } else if index == 0 {
-                format!(" {line}")
-            } else {
-                format!("   {line}")
-            }
-        })
-        .collect();
-    let inner = indented
-        .iter()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(0);
-
-    let mut out = Vec::with_capacity(indented.len() + 2);
-    out.push(format!("╭{}╮", "─".repeat(inner + 2)));
-    for line in &indented {
-        let pad = " ".repeat(inner - line.chars().count());
-        out.push(format!("│ {line}{pad} │"));
+/// Сокращает `$HOME` до `~` в начале пути (как cwd в welcome у Claude).
+fn abbreviate_home(path: &Path) -> String {
+    let shown = path.display().to_string();
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => shown
+            .strip_prefix(&home)
+            .map(|rest| format!("~{rest}"))
+            .unwrap_or(shown),
+        _ => shown,
     }
-    out.push(format!("╰{}╯", "─".repeat(inner + 2)));
-    out
 }
 
 /// Частота опроса событий: быстрее во время анимаций (плавность), реже в простое (экономия CPU).
