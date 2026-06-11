@@ -234,37 +234,19 @@ impl LiveRenderer {
         Ok(())
     }
 
-    /// При выходе из приложения: стираем только интерактивный низ (поле ввода,
-    /// футер, панель), НЕ трогая историю — она уже в нативном скроллбэке и должна
-    /// остаться видимой в терминале после выхода. «Замороженный» лоадер последнего
-    /// рана допечатываем как итоговую строку (`✻ Думал · 1m 52s`, в духе Claude
-    /// Code `✻ Cogitated · 1m 52s`): иначе он жил лишь в живом блоке и пропадал на
-    /// выходе. Раньше тут был `Clear(All)`, который уносил и лоадер, и контекст.
-    /// Беседа также сохранена в файле чата (вернуть через /chats).
-    pub(crate) fn clear_for_exit(&mut self, app: &App) -> io::Result<()> {
+    /// При выходе из приложения: ЧИСТЫЙ выход — стираем экран И нативный скроллбэк,
+    /// чтобы беседа не оставалась в терминале после закрытия (как `/clear`). Сама
+    /// беседа сохранена в файле чата — вернуть можно через `/chats`.
+    pub(crate) fn clear_for_exit(&mut self, _app: &App) -> io::Result<()> {
         let mut out = io::stdout().lock();
-        // Встаём на верх живого блока (как leave_below) и стираем его вниз.
-        if self.started {
-            if self.cursor_above > 0 {
-                queue!(out, MoveDown(self.cursor_above))?;
-            }
-            queue!(out, MoveToColumn(0))?;
-            if self.prev_height > 1 {
-                queue!(out, MoveUp(self.prev_height - 1))?;
-            }
-        } else {
-            queue!(out, MoveToColumn(0))?;
-        }
-        queue!(out, Clear(ClearType::FromCursorDown))?;
-        // Итоговый лоадер печатаем один раз → он переезжает в нативный скроллбэк и
-        // остаётся виден после выхода. Пустая строка над ним — воздух от истории
-        // (бывший gap_top живого блока).
-        if let Some(d) = app.last_run_duration {
-            queue!(out, Print("\r\n"))?;
-            queue_line(&mut out, &idle_loader_line(app, d))?;
-            queue!(out, Clear(ClearType::UntilNewLine), Print("\r\n"))?;
-        }
-        queue!(out, Show)?;
+        queue!(
+            out,
+            MoveToColumn(0),
+            Clear(ClearType::All),
+            Clear(ClearType::Purge),
+            MoveTo(0, 0),
+            Show
+        )?;
         out.flush()?;
         self.started = false;
         self.prev_height = 0;
