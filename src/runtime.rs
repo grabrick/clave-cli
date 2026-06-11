@@ -40,9 +40,15 @@ pub(crate) fn run_tui() -> AnyResult<()> {
     force_color_output(true);
     let _guard = TerminalGuard::new()?;
     let mut app = App::new();
-    if app.transcript.is_empty() {
-        // Пустой старт → приветственный блок прямо в ленту (в файл не пишется,
-        // т.к. не идёт через push_system; покажется в живом блоке).
+    // Welcome — при пустом старте ИЛИ когда в восстановленном чате нет реального
+    // диалога (ни одной реплики «◆ …», напр. после /clear осталась лишь системная
+    // строка): новое окно должно встречать приветствием, а не огрызком прошлого чата.
+    let has_conversation = app
+        .transcript
+        .iter()
+        .any(|line| line.trim_start().starts_with('◆'));
+    if !has_conversation {
+        // В файл не пишется (не через push_system) — живёт только в живом блоке.
         app.transcript = welcome_lines(&app);
     }
     let mut renderer = LiveRenderer::new();
@@ -77,8 +83,8 @@ impl Drop for TerminalGuard {
 }
 
 /// Приветственный блок для пустого старта — кладётся в ленту и живёт в нижнем
-/// регионе, пока не вытеснится новой историей.
-fn welcome_lines(app: &App) -> Vec<String> {
+/// регионе, пока не вытеснится новой историей. Также показывается после `/clear`.
+pub(crate) fn welcome_lines(app: &App) -> Vec<String> {
     let lang = app.lang;
     vec![
         lang.choose("✦ clave готов", "✦ clave ready").to_string(),

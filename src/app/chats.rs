@@ -54,10 +54,15 @@ impl App {
     pub(crate) fn clear_current_chat(&mut self) {
         let _ = fs::remove_file(&self.chat_path);
         self.reset_to_new_chat();
-        self.push_command_result(self.lang.choose(
-            "Контекст очищен, чат удалён.",
-            "Context cleared, chat deleted.",
-        ));
+        // /clear = чистый старт: показываем welcome (как при запуске), но в файл его
+        // НЕ пишем (не через push_system) → файл пуст → следующее окно тоже даст
+        // welcome. Раньше тут был push_command_result — он сохранялся и забивал welcome.
+        let welcome = crate::runtime::welcome_lines(self);
+        self.transcript = welcome;
+        self.status = self
+            .lang
+            .choose("контекст очищен", "context cleared")
+            .to_string();
     }
 
     /// Сброс к свежему пустому чату: новый id, имя по умолчанию, пустая лента, чистый

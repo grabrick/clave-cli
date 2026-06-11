@@ -257,29 +257,19 @@ impl LiveRenderer {
 }
 
 pub(crate) fn terminal_window_title(app: &App) -> String {
-    // Имя чата в заголовке — ТОЛЬКО если задано явно (/name, /rename), не авто.
-    let chat = app.chat_title_custom.then(|| app.chat_title.as_str());
-    format_terminal_window_title(&app.resolved_work_dir(), chat)
+    terminal_title_for(app.chat_title_custom, &app.chat_title)
 }
 
-pub(crate) fn format_terminal_window_title(work_dir: &Path, chat_title: Option<&str>) -> String {
-    let dir = sanitize_terminal_title_fragment(&terminal_workdir_label(work_dir));
-    match chat_title.map(str::trim).filter(|title| !title.is_empty()) {
-        // Назван явно: путь — имя — clave.
-        Some(title) => format!(
-            "{} - {} - {}",
-            dir,
-            sanitize_terminal_title_fragment(title),
-            APP_COMMAND
-        ),
-        // Безымянный: путь — clave (без авто-имени).
-        None => format!("{dir} - {APP_COMMAND}"),
+/// Заголовок, который СТАВИТ clave: только имя ЯВНО названного чата (/name, /rename).
+/// Путь, имя процесса и размер терминал показывает сам — clave их НЕ дублирует (иначе
+/// получалось "Macintosh HD — / — clave — clave — 133x24"). Безымянный чат → пустая
+/// строка: терминал рисует свой дефолт, clave заголовок не трогает.
+pub(crate) fn terminal_title_for(custom: bool, chat_title: &str) -> String {
+    if custom && !chat_title.trim().is_empty() {
+        sanitize_terminal_title_fragment(chat_title)
+    } else {
+        String::new()
     }
-}
-
-/// Полный путь до рабочей директории проекта — первый сегмент заголовка терминала.
-fn terminal_workdir_label(path: &Path) -> String {
-    path.display().to_string()
 }
 
 fn sanitize_terminal_title_fragment(text: &str) -> String {
@@ -602,28 +592,20 @@ mod tests {
     }
 
     #[test]
-    fn terminal_title_uses_cwd_chat_and_app_name() {
-        // Названный чат: путь — имя — clave.
-        assert_eq!(
-            format_terminal_window_title(Path::new("/"), Some("clave-chat")),
-            "/ - clave-chat - clave"
-        );
-        // Безымянный (None или пусто): путь — clave, без авто-имени.
-        assert_eq!(
-            format_terminal_window_title(Path::new("/tmp/project"), None),
-            "/tmp/project - clave"
-        );
-        assert_eq!(
-            format_terminal_window_title(Path::new("/"), Some("   ")),
-            "/ - clave"
-        );
+    fn terminal_title_only_set_for_named_chats() {
+        // Назван явно → ставим ТОЛЬКО имя (путь/процесс/размер рисует терминал).
+        assert_eq!(terminal_title_for(true, "myproject"), "myproject");
+        // Безымянный → пусто: clave заголовок не трогает, нет дублирования пути/clave.
+        assert_eq!(terminal_title_for(false, "chat-123"), "");
+        // Пустое имя даже при custom → пусто.
+        assert_eq!(terminal_title_for(true, "  "), "");
     }
 
     #[test]
     fn terminal_title_strips_control_sequences() {
         assert_eq!(
-            format_terminal_window_title(Path::new("/"), Some("ok\u{1b}]0;pwn\u{7}\rtitle")),
-            "/ - ok]0;pwntitle - clave"
+            terminal_title_for(true, "ok\u{1b}]0;pwn\u{7}\rtitle"),
+            "ok]0;pwntitle"
         );
     }
 }
