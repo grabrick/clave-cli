@@ -1437,6 +1437,44 @@ pub(crate) fn emit_error_lines(tx: &Sender<WorkerEvent>, text: &str) {
     }
 }
 
+/// Строки для показа при ошибке провайдера в чате: заголовок с КОДОМ выхода, затем
+/// детали из stderr — а если stderr пуст (claude шлёт ошибки в stdout stream-json и
+/// при обрыве до `result` они не доезжают), честная подсказка о транзиентной природе
+/// сбоя вместо немого «no stderr output».
+pub(crate) fn chat_error_lines(
+    provider: &'static str,
+    code: i32,
+    stderr: &str,
+    lang: Language,
+) -> Vec<String> {
+    let mut out = vec![format!(
+        "{} {} ({} {code}):",
+        provider_display(provider, lang),
+        lang.choose("вернул ошибку", "returned an error"),
+        lang.choose("код", "exit code"),
+    )];
+
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        out.push(
+            lang.choose(
+                "⎿ без вывода — вероятно транзиентный сбой (сеть / лимит / таймаут). Повтори запрос.",
+                "⎿ no output — likely a transient failure (network / rate limit / timeout). Try again.",
+            )
+            .to_string(),
+        );
+    } else {
+        for line in stderr
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .take(40)
+        {
+            out.push(format!("⎿ {line}"));
+        }
+    }
+    out
+}
+
 pub(crate) fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = env::var("CLAVE_ENGINE") {
         if let Some(path) = existing_path(PathBuf::from(path)) {
@@ -1888,5 +1926,30 @@ mod tests {
                 "critic prompt #{i} has critic discipline"
             );
         }
+    }
+
+    #[test]
+    fn chat_error_lines_surface_code_and_cause() {
+        // Пустой stderr (типичный claude-сбой): заголовок с кодом + подсказка о
+        // транзиентной причине, БЕЗ немого «no stderr output».
+        let lines = chat_error_lines("claude", 1, "  ", Language::Ru);
+        assert!(
+            lines[0].contains("код 1"),
+            "код выхода в заголовке: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("транзиентный")),
+            "подсказка о причине: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains("no stderr output")),
+            "немого сообщения больше нет"
+        );
+
+        // Непустой stderr (codex): код + строки stderr, без подсказки-заглушки.
+        let lines = chat_error_lines("codex", 2, "boom: connection reset\n", Language::En);
+        assert!(lines[0].contains("exit code 2"), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("boom: connection reset")));
+        assert!(!lines.iter().any(|l| l.contains("transient")));
     }
 }

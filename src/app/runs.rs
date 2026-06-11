@@ -138,12 +138,11 @@ impl App {
                             .to_string(),
                         ));
                     } else {
-                        let _ = tx.send(WorkerEvent::Line(format!(
-                            "{} {}:",
-                            provider_display(provider, lang),
-                            lang.choose("вернул ошибку", "returned an error")
-                        )));
-                        emit_error_lines(&tx, stderr);
+                        // Показываем КОД выхода и причину — раньше код терялся, а пустой
+                        // stderr давал немое «no stderr output» (см. chat_error_lines).
+                        for line in chat_error_lines(provider, code, stderr, lang) {
+                            let _ = tx.send(WorkerEvent::Line(line));
+                        }
                     }
 
                     if planning {
