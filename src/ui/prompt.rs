@@ -6,8 +6,8 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let tick = current_effort_tick();
     let mut rendered = Vec::new();
 
-    rendered.push(chat_title_label_line(area.width, app));
-    rendered.push(prompt_rule_line(area.width, command_mode, tick, app.theme));
+    // Верхняя полоска композера со встроенной у правого края плашкой названия чата.
+    rendered.push(prompt_top_rule_line(area.width, command_mode, tick, app));
     for (index, line) in lines.iter().enumerate() {
         let prefix = if index == 0 { "› " } else { "  " };
         rendered.push(Line::from(vec![
@@ -30,32 +30,77 @@ pub(crate) fn draw_prompt_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(rendered), area);
 
     let (line_index, col) = input_cursor_position_wrapped(&app.input, app.cursor, area.width);
-    let cursor_y = area.y + 2 + (line_index as u16).min(area.height.saturating_sub(3));
+    // +1: над первой строкой ввода только верхняя полоска (плашка встроена в неё).
+    let cursor_y = area.y + 1 + (line_index as u16).min(area.height.saturating_sub(2));
     let cursor_x = area.x + 2 + col as u16;
     let max_x = area.x + area.width.saturating_sub(1);
     frame.set_cursor_position(Position::new(cursor_x.min(max_x), cursor_y));
 }
 
-/// Плашка с названием чата: отдельная строка над верхней полоской композера,
-/// прижатая к правому краю (с отступом в 1 символ от края).
-fn chat_title_label_line(width: u16, app: &App) -> Line<'static> {
-    let width = width as usize;
-    // Резерв: 2 внутренних пробела плашки + 1 символ отступа справа.
-    let title_room = width.saturating_sub(3);
-    let title = truncate_chars(&app.chat_title, title_room);
+/// Верхняя полоска композера со встроенной у правого края плашкой названия чата.
+fn prompt_top_rule_line(width: u16, active: bool, tick: u64, app: &App) -> Line<'static> {
+    top_rule_line_with_title(width, active, tick, app.theme, &app.chat_title)
+}
+
+/// Горизонтальная линия со встроенной у правого края плашкой `title`. После
+/// плашки — короткий «хвост» из `─` до границы, слева — продолжение линии. Если
+/// названия нет или ширины не хватает, рисуется обычная полоска без плашки.
+/// Чистая функция (без `App`) — удобно покрыть тестом.
+fn top_rule_line_with_title(
+    width: u16,
+    active: bool,
+    tick: u64,
+    theme: Theme,
+    title: &str,
+) -> Line<'static> {
+    let total = width as usize;
+    let title = title.trim();
+
+    // Хвост из `─` справа от плашки и минимальный «островок» линии слева.
+    const RIGHT_TAIL: usize = 2;
+    const MIN_LEFT: usize = 2;
+
+    if title.is_empty() || total < MIN_LEFT + RIGHT_TAIL + 3 {
+        return prompt_rule_line(width, active, tick, theme);
+    }
+
+    // Бюджет под текст: минус 2 внутренних пробела плашки, хвост и островок слева.
+    let title_room = total - (RIGHT_TAIL + MIN_LEFT + 2);
+    let title = truncate_chars(title, title_room);
     let badge = format!(" {title} ");
-    let left_pad = width.saturating_sub(badge.chars().count() + 1);
-    Line::from(vec![
-        Span::raw(" ".repeat(left_pad)),
-        Span::styled(
-            badge,
-            Style::default()
-                .fg(Color::Black)
-                .bg(app.theme.accent())
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-    ])
+    let badge_len = badge.chars().count();
+    let left_len = total.saturating_sub(badge_len + RIGHT_TAIL);
+
+    let mut spans = Vec::with_capacity(left_len + 1 + RIGHT_TAIL);
+    for index in 0..left_len {
+        spans.push(rule_span(index, active, tick, theme));
+    }
+    spans.push(Span::styled(
+        badge,
+        Style::default()
+            .fg(Color::Black)
+            .bg(theme.accent())
+            .add_modifier(Modifier::BOLD),
+    ));
+    for index in (left_len + badge_len)..total {
+        spans.push(rule_span(index, active, tick, theme));
+    }
+    Line::from(spans)
+}
+
+/// Один символ горизонтальной полоски для столбца `index`. В командном режиме
+/// столбцы переливаются акцентными оттенками в зависимости от `tick`.
+fn rule_span(index: usize, active: bool, tick: u64, theme: Theme) -> Span<'static> {
+    if !active {
+        return Span::styled("─", Style::default().fg(theme.accent_dim()));
+    }
+    let color = match ((index as u64 + tick) % 6) as usize {
+        0 => theme.accent_dim(),
+        1 | 5 => theme.accent(),
+        2..=4 => theme.accent_soft(),
+        _ => theme.accent(),
+    };
+    Span::styled("─", Style::default().fg(color))
 }
 
 pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64, theme: Theme) -> Line<'static> {
@@ -66,15 +111,8 @@ pub(crate) fn prompt_rule_line(width: u16, active: bool, tick: u64, theme: Theme
         );
     }
 
-    let mut spans = Vec::new();
-    for index in 0..width as usize {
-        let color = match ((index as u64 + tick) % 6) as usize {
-            0 => theme.accent_dim(),
-            1 | 5 => theme.accent(),
-            2..=4 => theme.accent_soft(),
-            _ => theme.accent(),
-        };
-        spans.push(Span::styled("─", Style::default().fg(color)));
-    }
+    let spans = (0..width as usize)
+        .map(|index| rule_span(index, active, tick, theme))
+        .collect::<Vec<_>>();
     Line::from(spans)
 }
