@@ -96,19 +96,35 @@ pub(crate) fn welcome_lines(app: &App) -> Vec<String> {
         app.direct_provider.as_str(),
         app.effort_summary()
     );
-    // Трёхстрочный логотип clave (рожица), красится акцентом.
-    let logo = ["▗▄▄▖", "▐••▌", "▝▀▀▘"];
+    // Робот clave (нарисован пользователем, 16×16 → Unicode-полублоки), красится
+    // акцентом темы. Все строки одной ширины — чтобы инфо справа выровнялось.
+    let logo = [
+        "  ▄████████▄  ",
+        "  ██████████  ",
+        "▀████████████▀",
+        "  ▄▄▄▄▄▄▄▄▄▄  ",
+        "  ███▀  ▀███  ",
+        "      ▄▄      ",
+        "    █▀  ▀█    ",
+        "    ▀▄██▄▀    ",
+    ];
     let hint = lang.choose(
         "Пиши сообщение — прямой чат · /plan — спека · /help — все команды",
         "Type a message — direct chat · /plan — spec · /help — all commands",
     );
     vec![
+        // Инфо — вверху, у головы робота (строки 0-2); ниже — только логотип.
         format!(
             "{WELCOME_NAME}{}{WELCOME_SEP}clave{WELCOME_SEP}v{version}",
             logo[0]
         ),
         format!("{WELCOME_INFO}{}{WELCOME_SEP}{model}", logo[1]),
         format!("{WELCOME_INFO}{}{WELCOME_SEP}{cwd}", logo[2]),
+        format!("{WELCOME_INFO}{}", logo[3]),
+        format!("{WELCOME_INFO}{}", logo[4]),
+        format!("{WELCOME_INFO}{}", logo[5]),
+        format!("{WELCOME_INFO}{}", logo[6]),
+        format!("{WELCOME_INFO}{}", logo[7]),
         String::new(),
         format!("{WELCOME_HINT}{hint}"),
     ]

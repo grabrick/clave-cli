@@ -41,6 +41,15 @@ pub(crate) fn transcript_entry_lines_with_state(
         return code_block_lines(line, width, theme);
     }
 
+    // Welcome-строки (логотип + инфо) рендерим БЕЗ переноса: логотип чувствителен к
+    // пробелам, а wrap_chars (перенос по словам) их схлопнул бы.
+    if line.starts_with(WELCOME_NAME)
+        || line.starts_with(WELCOME_INFO)
+        || line.starts_with(WELCOME_HINT)
+    {
+        return vec![style_transcript_line(line, lang, theme)];
+    }
+
     // Воздух перед началом ответа (⏺) и эхо команды (❯), чтобы реплики не слипались.
     let mut out = Vec::new();
     if line.starts_with("⏺ ") || line.starts_with("❯ ") {
@@ -327,13 +336,16 @@ fn welcome_name_line(rest: &str, theme: Theme) -> Line<'static> {
     ])
 }
 
-/// Строка инфо welcome: логотип акцентом, текст (модель/cwd) — серым.
+/// Строка welcome: логотип акцентом + (если есть) текст справа серым. Строки только
+/// с логотипом (без разделителя) красятся целиком акцентом.
 fn welcome_info_line(rest: &str, theme: Theme) -> Line<'static> {
-    let (logo, info) = rest.split_once(WELCOME_SEP).unwrap_or(("", rest));
-    Line::from(vec![
-        Span::styled(logo.to_string(), Style::default().fg(theme.accent())),
-        Span::styled(format!("  {info}"), Style::default().fg(Color::Gray)),
-    ])
+    match rest.split_once(WELCOME_SEP) {
+        Some((logo, info)) => Line::from(vec![
+            Span::styled(logo.to_string(), Style::default().fg(theme.accent())),
+            Span::styled(format!("  {info}"), Style::default().fg(Color::Gray)),
+        ]),
+        None => Line::styled(rest.to_string(), Style::default().fg(theme.accent())),
+    }
 }
 
 pub(crate) fn is_markdown_fence(line: &str) -> bool {
