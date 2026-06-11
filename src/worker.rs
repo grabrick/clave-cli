@@ -423,6 +423,49 @@ pub(crate) fn run_chat_provider(
     lang: Language,
     access: RunAccess,
 ) -> io::Result<ChatRunResult> {
+    let result = run_chat_attempt(
+        provider, effort, prompt, work_dir, &cancel_rx, &tx, lang, access,
+    )?;
+    if !is_transient_chat_failure(&result) {
+        return Ok(result);
+    }
+    // Один ретрай: мгновенный exit≠0 без вывода и без stderr — обычно транзиент
+    // (сеть / лимит / обрыв до result). Отмена и таймаут (124) НЕ ретраятся.
+    if cancel_rx.try_recv().is_ok() {
+        return Ok(result);
+    }
+    let _ = tx.send(WorkerEvent::Line(
+        lang.choose(
+            "⎿ транзиентный сбой — повтор один раз…",
+            "⎿ transient failure — retrying once…",
+        )
+        .to_string(),
+    ));
+    run_chat_attempt(
+        provider, effort, prompt, work_dir, &cancel_rx, &tx, lang, access,
+    )
+}
+
+/// Транзиентный сбой, который имеет смысл повторить: процесс мгновенно вышел с
+/// ненулевым кодом, не дав ни ответа, ни stderr. Таймаут (124) и отмена — не сюда.
+fn is_transient_chat_failure(result: &ChatRunResult) -> bool {
+    matches!(
+        result,
+        ChatRunResult::Completed(code, text, stderr, _)
+            if *code != 0 && *code != 124 && text.trim().is_empty() && stderr.trim().is_empty()
+    )
+}
+
+fn run_chat_attempt(
+    provider: &'static str,
+    effort: &str,
+    prompt: &str,
+    work_dir: &Path,
+    cancel_rx: &Receiver<()>,
+    tx: &Sender<WorkerEvent>,
+    lang: Language,
+    access: RunAccess,
+) -> io::Result<ChatRunResult> {
     let codex_out_file = env::temp_dir().join(format!(
         "clave-codex-{}-{}.txt",
         std::process::id(),
@@ -1951,5 +1994,42 @@ mod tests {
         assert!(lines[0].contains("exit code 2"), "{lines:?}");
         assert!(lines.iter().any(|l| l.contains("boom: connection reset")));
         assert!(!lines.iter().any(|l| l.contains("transient")));
+    }
+
+    #[test]
+    fn transient_failure_only_for_silent_nonzero_exit() {
+        // Ретраим: мгновенный exit≠0 без ответа и без stderr.
+        assert!(is_transient_chat_failure(&ChatRunResult::Completed(
+            1,
+            String::new(),
+            "  ".to_string(),
+            None
+        )));
+        // Не ретраим: успех; есть ответ; есть stderr (причина видна); таймаут (124).
+        assert!(!is_transient_chat_failure(&ChatRunResult::Completed(
+            0,
+            String::new(),
+            String::new(),
+            None
+        )));
+        assert!(!is_transient_chat_failure(&ChatRunResult::Completed(
+            1,
+            "answer".to_string(),
+            String::new(),
+            None
+        )));
+        assert!(!is_transient_chat_failure(&ChatRunResult::Completed(
+            1,
+            String::new(),
+            "boom".to_string(),
+            None
+        )));
+        assert!(!is_transient_chat_failure(&ChatRunResult::Completed(
+            124,
+            String::new(),
+            String::new(),
+            None
+        )));
+        assert!(!is_transient_chat_failure(&ChatRunResult::Cancelled));
     }
 }
