@@ -7,6 +7,7 @@ pub(crate) struct SettingsSnapshot {
     pub(crate) mode: Mode,
     pub(crate) rounds: usize,
     pub(crate) lang: Language,
+    pub(crate) path_link_target: PathTarget,
 }
 
 impl App {
@@ -17,6 +18,7 @@ impl App {
             mode: self.mode,
             rounds: self.rounds,
             lang: self.lang,
+            path_link_target: self.path_link_target,
         }
     }
 
@@ -26,6 +28,7 @@ impl App {
         self.set_mode(snapshot.mode);
         self.rounds = snapshot.rounds;
         self.lang = snapshot.lang;
+        self.path_link_target = snapshot.path_link_target;
     }
 
     pub(crate) fn open_settings(&mut self) {
@@ -40,7 +43,7 @@ impl App {
     }
 
     pub(crate) fn settings_rows(&self) -> usize {
-        6
+        7
     }
 
     pub(crate) fn adjust_settings_focus(&mut self, direction: isize) {
@@ -78,6 +81,20 @@ impl App {
                 } else {
                     Language::Ru
                 };
+            }
+            6 => {
+                let targets = available_targets(editor_installed);
+                let count = targets.len();
+                let current = targets
+                    .iter()
+                    .position(|target| *target == self.path_link_target)
+                    .unwrap_or(0);
+                let next = if direction < 0 {
+                    (current + count - 1) % count
+                } else {
+                    (current + 1) % count
+                };
+                self.path_link_target = targets[next];
             }
             _ => {}
         }

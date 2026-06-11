@@ -42,6 +42,8 @@ pub(crate) struct App {
     pub(crate) chat_path: PathBuf,
     pub(crate) chat_title: String,
     pub(crate) chat_title_custom: bool,
+    /// Куда открывать путь по Cmd+клику (OSC 8). Из конфига или авто-детектом.
+    pub(crate) path_link_target: PathTarget,
     pub(crate) onboarding: Option<Onboarding>,
     pub(crate) pending_external: Option<ExternalCommand>,
     pub(crate) input: String,
@@ -171,6 +173,9 @@ impl App {
             chat_path,
             chat_title,
             chat_title_custom,
+            path_link_target: config
+                .path_link_target
+                .unwrap_or_else(|| auto_default(editor_installed)),
             onboarding,
             pending_external: None,
             input: String::new(),

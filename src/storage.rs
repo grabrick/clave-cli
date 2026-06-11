@@ -258,6 +258,9 @@ pub(crate) fn load_config(path: &Path) -> AppConfig {
                     config.last_chat_id = Some(chat_id);
                 }
             }
+            "path_link_target" | "path_links" | "open_paths" => {
+                config.path_link_target = PathTarget::from_config_str(value);
+            }
             _ => {}
         }
     }
@@ -295,6 +298,7 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
             "claude_effort=\"{}\"\n",
             "linked_effort=\"{}\"\n",
             "last_chat=\"{}\"\n",
+            "path_link_target=\"{}\"\n",
         ),
         config.onboarding_done,
         config.mode.as_str(),
@@ -313,6 +317,10 @@ pub(crate) fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
             "shared"
         },
         config.last_chat_id.as_deref().unwrap_or(""),
+        config
+            .path_link_target
+            .map(PathTarget::as_config_str)
+            .unwrap_or(""),
     );
     fs::write(path, content)
 }

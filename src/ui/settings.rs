@@ -82,6 +82,17 @@ pub(crate) fn draw_settings_screen(frame: &mut Frame<'_>, area: Rect, app: &App)
         app.lang
             .choose("язык интерфейса Clave", "Clave interface language"),
     );
+    push_settings_row(
+        &mut lines,
+        app,
+        6,
+        app.lang.choose("Открытие путей", "Open paths"),
+        app.path_link_target.label(app.lang),
+        app.lang.choose(
+            "чем открывать пути по Cmd+клику",
+            "what opens file paths on Cmd+click",
+        ),
+    );
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(

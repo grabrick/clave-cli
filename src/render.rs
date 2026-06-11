@@ -133,12 +133,20 @@ impl LiveRenderer {
             }
             queue!(out, Clear(ClearType::FromCursorDown))?;
 
+            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             while app.scrollback_count < app.transcript.len() {
                 let raw = app.transcript[app.scrollback_count].clone();
-                let rows =
-                    history_line_render(&raw, app.lang, width, app.theme, &mut app.flush_state);
+                let rows = history_rich_render(
+                    &raw,
+                    app.lang,
+                    width,
+                    app.theme,
+                    &mut app.flush_state,
+                    app.path_link_target,
+                    &cwd,
+                );
                 for row in &rows {
-                    queue_line(&mut out, row)?;
+                    queue_rich_line(&mut out, row)?;
                     queue!(out, Clear(ClearType::UntilNewLine), Print("\r\n"))?;
                 }
                 app.scrollback_count += 1;
@@ -472,6 +480,29 @@ fn queue_line(out: &mut impl Write, line: &Line<'static>) -> io::Result<()> {
     Ok(())
 }
 
+/// Как `queue_line`, но спаны со ссылкой оборачивает в OSC 8-гиперссылку. URL —
+/// доверенный (строит `open_url`), а текст спана всё так же проходит через
+/// `sanitize_terminal_text`: контентные ESC вырезаются, инъекция невозможна.
+fn queue_rich_line(out: &mut impl Write, rich: &RichLine) -> io::Result<()> {
+    for (index, span) in rich.line.spans.iter().enumerate() {
+        let url = rich
+            .links
+            .iter()
+            .find(|link| link.span == index)
+            .map(|link| link.url.as_str());
+        apply_style(out, span.style)?;
+        if let Some(url) = url {
+            queue!(out, Print(format!("\x1b]8;;{url}\x1b\\")))?;
+        }
+        queue!(out, Print(sanitize_terminal_text(&span.content)))?;
+        if url.is_some() {
+            queue!(out, Print("\x1b]8;;\x1b\\"))?;
+        }
+        queue!(out, SetAttribute(CtAttr::Reset), ResetColor)?;
+    }
+    Ok(())
+}
+
 fn apply_style(out: &mut impl Write, style: Style) -> io::Result<()> {
     if let Some(fg) = style.fg {
         queue!(out, SetForegroundColor(to_crossterm_color(fg)))?;
@@ -545,6 +576,39 @@ mod tests {
             std::borrow::Cow::Borrowed(_)
         ));
         assert_eq!(sanitize_terminal_text(safe), safe);
+    }
+
+    #[test]
+    fn queue_rich_line_wraps_links_and_still_sanitizes_content() {
+        // Спан-ссылка (индекс 1) + спан с инъекцией ESC/OSC в КОНТЕНТЕ.
+        let line = Line::from(vec![
+            Span::raw("see "),
+            Span::raw("src/app.rs"),
+            Span::raw("\u{1b}]0;PWNED\u{7} tail"),
+        ]);
+        let rich = RichLine {
+            line,
+            links: vec![SpanLink {
+                span: 1,
+                url: "vscode://file/x:1:1".to_string(),
+            }],
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        queue_rich_line(&mut buf, &rich).unwrap();
+        let out = String::from_utf8_lossy(&buf);
+
+        // OSC 8 обрамляет путь доверенным URL.
+        assert!(
+            out.contains("\u{1b}]8;;vscode://file/x:1:1\u{1b}\\"),
+            "OSC8 open с URL: {out:?}"
+        );
+        assert!(out.contains("src/app.rs"), "текст ссылки на месте");
+        assert!(out.contains("\u{1b}]8;;\u{1b}\\"), "OSC8 close");
+        // Контентный OSC (инъекция) вырезан — ESC-форма отсутствует.
+        assert!(
+            !out.contains("\u{1b}]0;PWNED"),
+            "контентный OSC не должен пройти: {out:?}"
+        );
     }
 
     #[test]

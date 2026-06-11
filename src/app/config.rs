@@ -15,6 +15,8 @@ pub(crate) struct AppConfig {
     pub(crate) claude_effort_index: usize,
     pub(crate) linked_effort_split: bool,
     pub(crate) last_chat_id: Option<String>,
+    /// Цель открытия путей. `None` → не задано в конфиге, App применит авто-детект.
+    pub(crate) path_link_target: Option<PathTarget>,
 }
 
 impl Default for AppConfig {
@@ -33,6 +35,7 @@ impl Default for AppConfig {
             claude_effort_index: 4,
             linked_effort_split: true,
             last_chat_id: None,
+            path_link_target: None,
         }
     }
 }
@@ -53,6 +56,7 @@ impl App {
             claude_effort_index: self.claude_effort_index,
             linked_effort_split: self.linked_effort_split,
             last_chat_id: Some(self.chat_id.clone()),
+            path_link_target: Some(self.path_link_target),
         }
     }
 
