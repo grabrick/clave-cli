@@ -535,23 +535,32 @@ pub(crate) fn detect_paths(text: &str, cwd: &Path) -> Vec<PathSeg> {
 }
 
 /// Пост-проход: режет спаны строки на под-спаны по найденным путям и навешивает
-/// доверенный URL (стиль исходного спана сохраняется). При `Off` ссылок нет.
+/// доверенный URL. При `Off` ссылок нет. ВАЖНО: печать (`render::queue_rich_line`)
+/// применяет стили СПАНОВ, а не `line.style`, поэтому line-уровневый стиль
+/// (`Line::styled` — ошибки, заголовки, строки welcome) складываем в каждый спан
+/// (`base.patch(span.style)`), иначе он терялся бы и текст рисовался дефолтным белым.
 pub(crate) fn attach_links(line: Line<'static>, cwd: &Path, target: PathTarget) -> RichLine {
+    let base = line.style;
     if matches!(target, PathTarget::Off) {
+        let spans = line
+            .spans
+            .into_iter()
+            .map(|span| Span::styled(span.content, base.patch(span.style)))
+            .collect::<Vec<_>>();
         return RichLine {
-            line,
+            line: Line::from(spans),
             links: Vec::new(),
         };
     }
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut links: Vec<SpanLink> = Vec::new();
     for span in line.spans {
+        let style = base.patch(span.style);
         let segs = detect_paths(span.content.as_ref(), cwd);
         if segs.iter().all(|seg| seg.file.is_none()) {
-            spans.push(span);
+            spans.push(Span::styled(span.content, style));
             continue;
         }
-        let style = span.style;
         for seg in segs {
             let index = spans.len();
             if let Some((abs, line_no, col)) = &seg.file {
@@ -933,5 +942,23 @@ mod tests {
             !text.contains(WELCOME_NAME) && !text.contains(WELCOME_SEP),
             "сентинелы вычищены: {text:?}"
         );
+    }
+
+    #[test]
+    fn attach_links_folds_line_style_into_spans() {
+        // Регрессия: queue_rich_line печатает стили СПАНОВ, не line.style. attach_links
+        // обязан сложить line.style в спан — иначе Line::styled (нижние строки лого,
+        // подсказка, ошибки) терял цвет и рисовался дефолтным белым.
+        let line = Line::styled("█▄▀ robot", Style::default().fg(Color::Black));
+        let cwd = std::env::temp_dir();
+        for target in [PathTarget::Off, PathTarget::VsCode] {
+            let rich = attach_links(line.clone(), &cwd, target);
+            let span = rich.line.spans.first().expect("спан есть");
+            assert_eq!(
+                span.style.fg,
+                Some(Color::Black),
+                "line.style сложен в спан (target={target:?})"
+            );
+        }
     }
 }
