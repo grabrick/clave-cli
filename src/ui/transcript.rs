@@ -319,14 +319,15 @@ pub(crate) const WELCOME_HINT: char = '\u{E014}'; // строка-подсказ
 pub(crate) const WELCOME_SEP: char = '\u{E011}'; // разделитель сегментов
 
 /// Строка имени welcome: логотип чёрным, «clave» — белым жирным, версия — серым.
-/// Цвет логотипа фиксирован (RGB 0,0,0) и не зависит от темы.
+/// Цвет логотипа — ANSI чёрный (Terminal.app не поддерживает truecolor RGB →
+/// рисовал бы белым), не зависит от темы.
 fn welcome_name_line(rest: &str) -> Line<'static> {
     let mut parts = rest.split(WELCOME_SEP);
     let logo = parts.next().unwrap_or("").to_string();
     let name = parts.next().unwrap_or("").to_string();
     let version = parts.next().unwrap_or("").to_string();
     Line::from(vec![
-        Span::styled(logo, Style::default().fg(Color::Rgb(0, 0, 0))),
+        Span::styled(logo, Style::default().fg(Color::Black)),
         Span::styled(
             format!("  {name}"),
             Style::default()
@@ -343,10 +344,10 @@ fn welcome_name_line(rest: &str) -> Line<'static> {
 fn welcome_info_line(rest: &str) -> Line<'static> {
     match rest.split_once(WELCOME_SEP) {
         Some((logo, info)) => Line::from(vec![
-            Span::styled(logo.to_string(), Style::default().fg(Color::Rgb(0, 0, 0))),
+            Span::styled(logo.to_string(), Style::default().fg(Color::Black)),
             Span::styled(format!("  {info}"), Style::default().fg(Color::Gray)),
         ]),
-        None => Line::styled(rest.to_string(), Style::default().fg(Color::Rgb(0, 0, 0))),
+        None => Line::styled(rest.to_string(), Style::default().fg(Color::Black)),
     }
 }
 
@@ -881,7 +882,7 @@ mod tests {
         // Логотип — абсолютным чёрным (не зависит от темы).
         let logo = line.spans.first().expect("логотип-спан");
         assert_eq!(logo.content.as_ref(), "LOGO");
-        assert_eq!(logo.style.fg, Some(Color::Rgb(0, 0, 0)));
+        assert_eq!(logo.style.fg, Some(Color::Black));
         // Имя — белым жирным.
         let name = line
             .spans
@@ -901,7 +902,7 @@ mod tests {
         let raw = format!("{WELCOME_INFO}LOGO{WELCOME_SEP}~/proj");
         let line = style_transcript_line(&raw, Language::Ru, Theme::Purple);
         assert_eq!(line.spans[0].content.as_ref(), "LOGO");
-        assert_eq!(line.spans[0].style.fg, Some(Color::Rgb(0, 0, 0)));
+        assert_eq!(line.spans[0].style.fg, Some(Color::Black));
         let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(joined, "LOGO  ~/proj");
     }
