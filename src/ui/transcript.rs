@@ -300,9 +300,9 @@ pub(crate) fn style_transcript_line(line: &str, lang: Language, theme: Theme) ->
                 .add_modifier(Modifier::ITALIC),
         )
     } else if let Some(rest) = line.strip_prefix(WELCOME_NAME) {
-        welcome_name_line(rest, theme)
+        welcome_name_line(rest)
     } else if let Some(rest) = line.strip_prefix(WELCOME_INFO) {
-        welcome_info_line(rest, theme)
+        welcome_info_line(rest)
     } else if let Some(rest) = line.strip_prefix(WELCOME_HINT) {
         Line::styled(format!("  {rest}"), Style::default().fg(Color::Gray))
     } else {
@@ -318,14 +318,15 @@ pub(crate) const WELCOME_INFO: char = '\u{E013}'; // логотип | текст
 pub(crate) const WELCOME_HINT: char = '\u{E014}'; // строка-подсказка
 pub(crate) const WELCOME_SEP: char = '\u{E011}'; // разделитель сегментов
 
-/// Строка имени welcome: логотип акцентом, «clave» — белым жирным, версия — серым.
-fn welcome_name_line(rest: &str, theme: Theme) -> Line<'static> {
+/// Строка имени welcome: логотип чёрным, «clave» — белым жирным, версия — серым.
+/// Цвет логотипа фиксирован (RGB 0,0,0) и не зависит от темы.
+fn welcome_name_line(rest: &str) -> Line<'static> {
     let mut parts = rest.split(WELCOME_SEP);
     let logo = parts.next().unwrap_or("").to_string();
     let name = parts.next().unwrap_or("").to_string();
     let version = parts.next().unwrap_or("").to_string();
     Line::from(vec![
-        Span::styled(logo, Style::default().fg(theme.accent())),
+        Span::styled(logo, Style::default().fg(Color::Rgb(0, 0, 0))),
         Span::styled(
             format!("  {name}"),
             Style::default()
@@ -336,15 +337,16 @@ fn welcome_name_line(rest: &str, theme: Theme) -> Line<'static> {
     ])
 }
 
-/// Строка welcome: логотип акцентом + (если есть) текст справа серым. Строки только
-/// с логотипом (без разделителя) красятся целиком акцентом.
-fn welcome_info_line(rest: &str, theme: Theme) -> Line<'static> {
+/// Строка welcome: логотип чёрным + (если есть) текст справа серым. Строки только
+/// с логотипом (без разделителя) красятся целиком чёрным. Цвет логотипа не зависит
+/// от темы.
+fn welcome_info_line(rest: &str) -> Line<'static> {
     match rest.split_once(WELCOME_SEP) {
         Some((logo, info)) => Line::from(vec![
-            Span::styled(logo.to_string(), Style::default().fg(theme.accent())),
+            Span::styled(logo.to_string(), Style::default().fg(Color::Rgb(0, 0, 0))),
             Span::styled(format!("  {info}"), Style::default().fg(Color::Gray)),
         ]),
-        None => Line::styled(rest.to_string(), Style::default().fg(theme.accent())),
+        None => Line::styled(rest.to_string(), Style::default().fg(Color::Rgb(0, 0, 0))),
     }
 }
 
@@ -872,14 +874,14 @@ mod tests {
     }
 
     #[test]
-    fn welcome_name_line_logo_accent_name_bold_version_gray() {
+    fn welcome_name_line_logo_black_name_bold_version_gray() {
         // Сентинелы кодируют: логотип | имя | версия.
         let raw = format!("{WELCOME_NAME}LOGO{WELCOME_SEP}clave{WELCOME_SEP}v0.1.2");
         let line = style_transcript_line(&raw, Language::Ru, Theme::Purple);
-        // Логотип — акцентом.
+        // Логотип — абсолютным чёрным (не зависит от темы).
         let logo = line.spans.first().expect("логотип-спан");
         assert_eq!(logo.content.as_ref(), "LOGO");
-        assert_eq!(logo.style.fg, Some(Theme::Purple.accent()));
+        assert_eq!(logo.style.fg, Some(Color::Rgb(0, 0, 0)));
         // Имя — белым жирным.
         let name = line
             .spans
@@ -895,11 +897,11 @@ mod tests {
     }
 
     #[test]
-    fn welcome_info_line_logo_accent_text_gray() {
+    fn welcome_info_line_logo_black_text_gray() {
         let raw = format!("{WELCOME_INFO}LOGO{WELCOME_SEP}~/proj");
         let line = style_transcript_line(&raw, Language::Ru, Theme::Purple);
         assert_eq!(line.spans[0].content.as_ref(), "LOGO");
-        assert_eq!(line.spans[0].style.fg, Some(Theme::Purple.accent()));
+        assert_eq!(line.spans[0].style.fg, Some(Color::Rgb(0, 0, 0)));
         let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(joined, "LOGO  ~/proj");
     }
